@@ -83,10 +83,37 @@ class ReasoningEngine:
             await self.state_mgr.set_state(AssistantState.PLANNING)
             plan = self.planner.create_plan(text)
             
-            # Chat completion via LLM Router
+            # Chat completion via LLM Router (returns a plain string)
             prompt = f"User Request: {text}\nContext: {memory_context['active_context']}\nMemories: {memory_context['relevant_memories']}"
-            llm_res = await self.llm_router.chat([{"role": "user", "content": prompt}])
-            response_text = llm_res.get("text", "I'm processing your request.")
+            try:
+                llm_res = await self.llm_router.chat([{"role": "user", "content": prompt}])
+            except Exception as e:
+                logger.error(f"LLM provider call failed: {e}")
+                response_text = (
+                    "I couldn't reach the LLM provider. If you're using Groq/OpenRouter, "
+                    "check that your API key is valid and set (local .env file). "
+                    f"(Provider error: {type(e).__name__})"
+                )
+                # Skip the rest of the cognitive loop on provider failure.
+                await self.state_mgr.set_state(AssistantState.SPEAKING, {"text": response_text})
+                await self.event_bus.publish({
+                    "type": "assistant.message",
+                    "text": response_text,
+                    "tool_result": None,
+                    "intent": intent_res,
+                    "plan": None,
+                    "metacognition": metacog_res,
+                    "duration_ms": (time.time() - start_time) * 1000,
+                })
+                return {
+                    "text": response_text,
+                    "intent": intent_res,
+                    "tool_result": None,
+                    "plan": None,
+                    "metacognition": metacog_res,
+                    "duration_ms": (time.time() - start_time) * 1000,
+                }
+            response_text = llm_res if isinstance(llm_res, str) else llm_res.get("text", "I'm processing your request.")
 
         # 7. REFLECTING & LEARNING
         await self.state_mgr.set_state(AssistantState.REFLECTING)

@@ -14,12 +14,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from raphael.core.configuration import get_config
+from raphael.core.configuration import get_config, update_config
 from raphael.core.state_manager import get_state_manager
 from raphael.core.resource_manager import get_resource_manager
 from raphael.core.logging import get_logger
 from raphael.network.websocket import get_ws_manager
 from raphael.brain.reasoning import get_reasoning_engine
+from raphael.brain.llm_router import get_llm_router
 from raphael.voice.pipeline import get_voice_pipeline
 from raphael.tools.registry import get_tool_registry
 from raphael.security.confirmation import get_confirmation_manager
