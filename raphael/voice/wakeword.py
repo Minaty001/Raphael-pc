@@ -71,7 +71,8 @@ class TranscriptWakeProvider(WakeWordProvider):
 
     def process_transcript(self, text: str) -> Optional[str]:
         clean = (text or "").lower().strip()
-        for kw in self.wake_words:
+        # Prefer the longest matching phrase so "hey raphael" wins over "raphael".
+        for kw in sorted(self.wake_words, key=len, reverse=True):
             if re.search(r"\b" + re.escape(kw) + r"\b", clean):
                 return kw
         return None
@@ -262,7 +263,7 @@ class WakeWordDetector:
 
     def _find_wake(self, text: str) -> Optional[str]:
         clean = (text or "").lower().strip()
-        for kw in self.wake_words:
+        for kw in sorted(self.wake_words, key=len, reverse=True):
             if re.search(r"\b" + re.escape(kw) + r"\b", clean):
                 return kw
         return None
@@ -270,8 +271,14 @@ class WakeWordDetector:
     def _strip_wake(self, text: str, phrase: str) -> str:
         if not phrase:
             return text.strip()
-        pattern = re.compile(r"^\s*(" + re.escape(phrase) + r")\s*[,:]?\s*", re.IGNORECASE)
-        return pattern.sub("", text).strip()
+        # Strip the matched phrase wherever it appears (not just at start, since a
+        # longer variant like "hey raphael" may have already been reduced to its
+        # shorter match "raphael" which sits mid-string after a prefix).
+        pattern = re.compile(r"\s*\b" + re.escape(phrase) + r"\b\s*[,:]?", re.IGNORECASE)
+        stripped = pattern.sub(" ", text).strip()
+        # Also drop a leading invocation prefix if one remains (e.g. "hey", "ok").
+        stripped = re.sub(r"^(hey|ok|yo|hi)\s+", "", stripped, flags=re.IGNORECASE)
+        return stripped
 
     # API used by AlwaysAliveController
     def is_wake_in_text(self, text: str) -> bool:
