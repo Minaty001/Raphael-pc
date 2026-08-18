@@ -25,7 +25,7 @@ functional even where no microphone is present — the WebSocket/browser path
 import asyncio
 import threading
 import time
-from typing import Optional
+from typing import Optional, Callable
 
 from raphael.core.configuration import get_config
 from raphael.core.logging import get_logger
@@ -83,6 +83,98 @@ class Resampler:
         return struct.pack("<%dh" % len(out), *out)
 
 
+def rms_energy(pcm: bytes) -> float:
+    """Root Mean Square energy of 16-bit mono PCM (0..~32768)."""
+    if not pcm or len(pcm) < 2:
+        return 0.0
+    import math
+    import struct
+    n = len(pcm) // 2
+    try:
+        samples = struct.unpack("<%dh" % n, pcm[: n * 2])
+        return math.sqrt(sum(s * s for s in samples) / n)
+    except Exception:
+        return 0.0
+
+
+class CommandBuffer:
+    """VAD-segmented command capture (audit #4 / ROADMAP L3.5).
+
+    While Raphael is in COMMAND_LISTENING, raw 16kHz PCM chunks are accumulated
+    here. A lightweight RMS VAD detects the speech burst, then a silence tail
+    (or max duration) finalizes the segment. Exactly **one** STT call is made
+    per command segment — not one per 30ms audio chunk (the old, wasteful
+    behavior that fired dozens of STT tasks per second and produced fragmented
+    transcripts).
+
+    The buffer is decoupled from the event loop: `push()` runs on the capture
+    thread (via _dispatch) and schedules finalization through a provided
+    `loop.call_soon_threadsafe` callback, keeping the architecture sound.
+    """
+
+    def __init__(
+        self,
+        on_segment: "Callable[[bytes], None]",
+        vad_threshold: float = 120.0,
+        pre_speech_ms: int = 200,
+        silence_timeout_ms: int = 700,
+        max_segment_ms: int = 12000,
+        callback_scheduler: "Optional[Callable[[Callable[[], None]], None]]" = None,
+    ):
+        self._on_segment = on_segment
+        self._vad_threshold = vad_threshold
+        self._silence_timeout = silence_timeout_ms / 1000.0
+        self._max_segment = max_segment_ms / 1000.0
+        self._pre_speech = pre_speech_ms / 1000.0
+        self._scheduler = callback_scheduler  # call_soon_threadsafe or None
+        self._reset()
+
+    def _reset(self):
+        self._buf = bytearray()
+        self._speech_active = False
+        self._last_speech_ts = 0.0
+        self._seg_start_ts = 0.0
+
+    def push(self, pcm: bytes, now: float) -> None:
+        if not pcm:
+            return
+        energy = rms_energy(pcm)
+        has_speech = energy >= self._vad_threshold
+
+        if not self._speech_active:
+            if has_speech:
+                self._speech_active = True
+                self._seg_start_ts = now
+                self._last_speech_ts = now
+                self._buf.extend(pcm)
+            # ignore pre-speech silence
+            return
+
+        # Inside an active speech segment.
+        self._buf.extend(pcm)
+        if has_speech:
+            self._last_speech_ts = now
+        # Finalize on sustained silence or max length.
+        if (now - self._last_speech_ts) >= self._silence_timeout:
+            self._finalize()
+        elif (now - self._seg_start_ts) >= self._max_segment:
+            self._finalize()
+
+    def _finalize(self):
+        segment = bytes(self._buf)
+        self._reset()
+        if not segment:
+            return
+        if self._scheduler is not None:
+            self._scheduler(lambda: self._on_segment(segment))
+        else:
+            # No loop available (e.g. headless import-time test): fire directly.
+            try:
+                self._on_segment(segment)
+            except Exception:
+                pass
+
+
 logger = get_logger("voice.microphone")
 
 
@@ -112,8 +204,12 @@ class MicrophoneSource:
         # asyncio context, so it cannot call asyncio.get_event_loop() itself
         # (would raise RuntimeError), nor assume any loop is running.
         try:
-            self._loop = asyncio.get_event_loop()
-        except RuntimeError:
+            self._loop = asyncio.get_event_loop_policy().get_event_loop()
+            if not self._loop.is_running():
+                # Construction-time loop exists but isn't running yet. The real
+                # capture loop is (re)captured in start() via get_running_loop().
+                self._loop = None
+        except Exception:
             self._loop = None
 
         # Device auto-selection state
@@ -145,6 +241,27 @@ class MicrophoneSource:
     async def start(self) -> None:
         if not self._available or self._running:
             return
+
+        # (Re)capture the running event loop. Construction-time get_event_loop()
+        # may have bound a closed/wrong loop, so capture it here where a loop is
+        # guaranteed running, and wire the command buffer to dispatch via it.
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
+        # Typed local so the command buffer scheduler has a clean
+        # (Callable[[], None]) -> None shape regardless of loop presence.
+        sched: Optional[Callable[[Callable[[], None]], None]] = None
+        if self._loop is not None:
+            loop = self._loop
+            sched = lambda f: (loop.call_soon_threadsafe(f), None)[1]
+        self._cmd_buffer = CommandBuffer(
+            on_segment=self._on_command_segment,
+            vad_threshold=120.0,
+            silence_timeout_ms=700,
+            max_segment_ms=12000,
+            callback_scheduler=sched,
+        )
 
         # Select the best input device before starting capture
         self._current_device = self._selector.select_best_device()
@@ -324,7 +441,6 @@ class MicrophoneSource:
         sample rate.
         """
         from raphael.voice.wakeword import get_wake_word_detector
-        from raphael.voice.stt import get_stt_provider
 
         # Normalize sample rate -> TARGET_RATE for all downstream consumers.
         resampler = getattr(self, "_resampler", None)
@@ -335,11 +451,27 @@ class MicrophoneSource:
         # Always feed the ring buffer / KWS so a wake is detected (FIX 5).
         wwd.ingest_audio(pcm)
 
-        # If we are actively capturing a command, run STT on this frame (FIX 6).
+        # If we are actively capturing a command, accumulate the chunk into the
+        # VAD-segmented CommandBuffer. Exactly ONE STT call fires per detected
+        # speech segment (audit #4) — not one per 30ms chunk.
         if self._asm.state == AudioState.COMMAND_LISTENING:
-            asyncio.ensure_future(self._transcribe(pcm, get_stt_provider()))
+            buf = getattr(self, "_cmd_buffer", None)
+            if buf is not None:
+                buf.push(pcm, time.time())
 
-    async def _transcribe(self, pcm: bytes, stt) -> None:
+    def _on_command_segment(self, segment: bytes) -> None:
+        """Called once per VAD-detected command segment (on the asyncio loop).
+
+        Runs STT on the whole buffered segment and forwards the transcript to
+        the voice pipeline. This replaces the old per-chunk STT storm.
+        """
+        try:
+            from raphael.voice.stt import get_stt_provider
+            asyncio.ensure_future(self._transcribe_segment(segment, get_stt_provider()))
+        except Exception as e:
+            logger.warning(f"Command segment STT schedule error: {e}")
+
+    async def _transcribe_segment(self, pcm: bytes, stt) -> None:
         try:
             text = await stt.transcribe(pcm)
             if text and text.strip():
