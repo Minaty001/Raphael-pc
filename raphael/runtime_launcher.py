@@ -20,10 +20,23 @@ import asyncio
 import signal
 import argparse
 
-# Ensure local + env site-packages are importable.
+# Ensure dependencies are importable. Prefer the current interpreter's own
+# packages; only fall back to a bundled env path when a dependency is missing
+# (avoids shadowing a working install with a broken/partial one).
+import importlib.util as _ilu
+
+def _dep_available(name: str) -> bool:
+    try:
+        return _ilu.find_spec(name) is not None
+    except Exception:
+        return False
+
 for env_path in ["/tmp/raphael_env", os.path.expanduser("~/.local/lib/python3.12/site-packages")]:
-    if os.path.exists(env_path) and env_path not in sys.path:
-        sys.path.insert(0, env_path)
+    if not os.path.exists(env_path) or env_path in sys.path:
+        continue
+    if env_path == "/tmp/raphael_env" and _dep_available("fastapi"):
+        continue
+    sys.path.insert(0, env_path)
 
 from raphael.core.configuration import get_config
 from raphael.core.logging import get_logger
@@ -47,6 +60,9 @@ async def _main_async():
     import uvicorn
     from raphael.network.api import app
 
+    # Default WebSocket implementation. uvicorn 0.41 is compatible with
+    # websockets 13.x (RFC6455); pinning websockets==13.1 avoids the
+    # uvicorn 0.41 + websockets>=14 handshake 403.
     server = uvicorn.Server(
         uvicorn.Config(app, host=host, port=port, log_level="info", reload=False)
     )

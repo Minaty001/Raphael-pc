@@ -58,14 +58,20 @@ def test_proactive_engine_schedules_and_budgets():
         from raphael.proactive.proactive_engine import get_proactive_engine
         from raphael.brain.open_loops import get_open_loop_tracker
         from raphael.runtime.health_monitor import get_health_monitor
+        from raphael.core.resource_manager import get_resource_manager
         # Mark runtime healthy + resources available so the gate passes.
         hm = get_health_monitor()
         for c in ("core", "voice", "wakeword", "scheduler", "memory", "websocket", "llm"):
             hm.register(c, "ok")
+        # Stub the resource gate: this is a unit test of the proactive engine,
+        # not the live ResourceManager (which reflects real CPU/RAM load and
+        # would make the test flaky on a busy machine).
+        get_resource_manager()._background_paused = False
         get_open_loop_tracker().create_loop("fix the login bug", 0.9)
         eng = get_proactive_engine()
         eng.last_proactive_time = 0  # allow immediate
         eng.proactive_count_this_hour = 0
+        eng.config.proactive.max_interruptions_per_hour = 1  # deterministic budget
         res = await eng.evaluate_proactive_opportunity({"recent_screen": {}})
         assert res is not None
         assert "login bug" in res["text"]

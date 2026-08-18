@@ -125,8 +125,12 @@ def test_pause_cancels_running_task():
         mgr = TaskManager()
         mgr._running_flag = True
         mgr.set_background_paused(False)
-        # Prevent resource throttling from interfering in the test.
+        # Prevent resource throttling from interfering in the test. This is a unit
+        # test of pause/cancel semantics, not the live ResourceManager (which
+        # reflects real CPU/RAM and would make the test flaky on a busy box).
         mgr._res_mgr._background_paused = False
+        mgr._res_mgr.should_throttle = lambda priority: False
+        mgr._res_mgr.can_run = lambda task: True
         tid = mgr.create("long job", lambda **kw: asyncio.sleep(5), priority=TaskPriority.LOW.value)
         loop = asyncio.get_event_loop()
         t = loop.create_task(mgr._scheduler_loop())

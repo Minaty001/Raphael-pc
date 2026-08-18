@@ -41,7 +41,7 @@ class WebSocketManager:
             "state": state_mgr.current_state.value,
             "timestamp": time.time(),
             "metrics": res_mgr.get_system_metrics(),
-            "metadata": state_mgr.metadata
+            "metadata": state_mgr.get_summary()
         }
         await websocket.send_text(json.dumps(sync_payload))
 

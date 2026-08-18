@@ -53,7 +53,16 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # WebSocket handshakes are rejected by Starlette when allow_origins=["*"]
+    # is combined with allow_credentials=True (returns 403). For a localhost
+    # assistant we list the explicit origins we serve from. Keep credentials
+    # enabled so browser-stored tokens work.
+    allow_origins=[
+        "http://localhost:8765",
+        "http://127.0.0.1:8765",
+        "http://localhost:5173",   # Vite dev server (optional)
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -223,6 +232,9 @@ async def retry_task(task_id: str):
 async def _noop_task(**kwargs):
     """Default placeholder coroutine for API-created tasks (demo/integration)."""
     await asyncio.sleep(2.0)
+
+
+@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     ws_mgr = get_ws_manager()
     await ws_mgr.connect(websocket)
