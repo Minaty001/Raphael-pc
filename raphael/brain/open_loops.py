@@ -28,6 +28,14 @@ class OpenLoopTracker:
                     updated_at REAL NOT NULL
                 )
             """)
+            # FIX 0: ensure the column exists regardless of which module
+            # initialized the table first (long_term.py defines it without
+            # updated_at when it runs first).
+            cols = [c["name"] for c in cursor.execute("PRAGMA table_info(open_loops)").fetchall()]
+            if "updated_at" not in cols:
+                cursor.execute(
+                    "ALTER TABLE open_loops ADD COLUMN updated_at REAL NOT NULL DEFAULT 0"
+                )
             conn.commit()
 
     def create_loop(self, topic: str, priority: float = 0.8) -> int:

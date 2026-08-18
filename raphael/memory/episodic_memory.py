@@ -20,18 +20,45 @@ class EpisodicMemory:
     def _init_table(self):
         with self.ltm._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS episodes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    summary TEXT NOT NULL,
-                    category TEXT DEFAULT 'general',
-                    entities TEXT,
-                    importance REAL DEFAULT 0.7,
-                    confidence REAL DEFAULT 0.9,
-                    source TEXT DEFAULT 'user_interaction',
-                    timestamp REAL NOT NULL
+            # FIX 0: guarantee the canonical episodic schema exists. If a legacy
+            # action/details-based `episodes` table was created by another module
+            # first, rebuild it as the summary-based schema (dev DBs only).
+            cursor.execute("PRAGMA table_info(episodes)")
+            cols = [c["name"] for c in cursor.fetchall()]
+            if "action" in cols:
+                # Legacy action/details-based table from an earlier schema.
+                # Rebuild as the canonical summary-based schema (dev DBs only).
+                logger.info("Rebuilding legacy episodes table -> episodic schema")
+                cursor.execute("ALTER TABLE episodes RENAME TO episodes_legacy_tmp")
+                cursor.execute("""
+                    CREATE TABLE episodes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        summary TEXT NOT NULL,
+                        category TEXT DEFAULT 'general',
+                        entities TEXT,
+                        importance REAL DEFAULT 0.7,
+                        confidence REAL DEFAULT 0.9,
+                        source TEXT DEFAULT 'user_interaction',
+                        timestamp REAL NOT NULL
+                    )
+                """)
+                cursor.execute(
+                    "INSERT INTO episodes (id, timestamp) SELECT id, timestamp FROM episodes_legacy_tmp"
                 )
-            """)
+                cursor.execute("DROP TABLE episodes_legacy_tmp")
+            else:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS episodes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        summary TEXT NOT NULL,
+                        category TEXT DEFAULT 'general',
+                        entities TEXT,
+                        importance REAL DEFAULT 0.7,
+                        confidence REAL DEFAULT 0.9,
+                        source TEXT DEFAULT 'user_interaction',
+                        timestamp REAL NOT NULL
+                    )
+                """)
             conn.commit()
 
     def record_episode(

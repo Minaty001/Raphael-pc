@@ -80,10 +80,43 @@ class RaphaelRuntime:
             return
         logger.info("Stopping Raphael Assistant...")
         self._running = False
+
+        # FIX 1: graceful shutdown of the Always-Alive runtime first
+        # (checkpoints tasks, stops workers, closes audio/WS).
+        try:
+            await get_always_alive().stop()
+        except Exception as e:
+            logger.warning(f"Always-alive stop reported: {e}")
+
         if self._perception_task:
             self._perception_task.cancel()
+            try:
+                await self._perception_task
+            except (asyncio.CancelledError, Exception):
+                pass
             self._perception_task = None
+
         await get_scheduler().stop()
+
+        # FIX 1: checkpoint tasks + consolidate memory before leaving (graceful
+        # shutdown, so a later boot can resume background work — Section 29/52).
+        try:
+            from raphael.runtime.tasks import get_task_manager
+            # checkpoint_all() is synchronous; do NOT await it.
+            get_task_manager().checkpoint_all()
+        except Exception as e:
+            logger.warning(f"Task checkpoint: {e}")
+        try:
+            from raphael.memory.memory_manager import get_memory_manager
+            # MemoryManager exposes consolidate_memories(); best-effort flush.
+            mm = get_memory_manager()
+            if hasattr(mm, "flush"):
+                mm.flush()
+            elif hasattr(mm, "consolidate_memories"):
+                mm.consolidate_memories()
+        except Exception as e:
+            logger.warning(f"Memory flush: {e}")
+
         await get_state_manager().set_state(AssistantState.OFFLINE)
         logger.info("Raphael Assistant stopped.")
 

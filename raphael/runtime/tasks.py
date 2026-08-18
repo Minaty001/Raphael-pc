@@ -202,6 +202,20 @@ class TaskManager:
         self._paused_background = False
         self._loop_task: Optional[asyncio.Task] = None
         self._running_flag = False
+        # FIX 2: named task factories so persisted tasks can be re-executed
+        # after restart (coroutines are not serializable). A factory returns the
+        # coroutine callable for a given (name) — used during recovery.
+        self._factories: Dict[str, Callable[..., Awaitable[None]]] = {}
+
+    def register_factory(self, name: str, coroutine: Callable[..., Awaitable[None]]) -> None:
+        """Register a named coroutine so recovered tasks can be rebuilt."""
+        self._factories[name] = coroutine
+
+    def _resolve_coroutine(self, task: BackgroundTask) -> Optional[Callable[..., Awaitable[None]]]:
+        if task.coroutine is not None:
+            return task.coroutine
+        # Recovery path: rebuild from the registered factory by name.
+        return self._factories.get(task.name)
 
     # --- config helpers -------------------------------------------------
     def _recommended_pool_size(self) -> int:
@@ -266,9 +280,18 @@ class TaskManager:
         if not t or t.status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value,
                                  TaskStatus.CANCELLED.value):
             return False
+        # Write a checkpoint so the task can resume from where it stopped (29).
+        self.checkpoint(task_id, {**t.checkpoint, "paused_at": time.time(),
+                                  "progress": t.progress})
+        # If it is actively running, cancel the underlying asyncio task so it
+        # actually stops consuming resources (FIX 3 — real pause).
+        running = self._running.get(task_id)
+        if running and not running.done():
+            running.cancel()
         t.status = TaskStatus.PAUSED.value
         self.store.upsert(t)
         self._emit("task.paused", t)
+        logger.info(f"Task paused: {t.name} ({task_id})")
         return True
 
     def resume(self, task_id: str) -> bool:
@@ -282,10 +305,15 @@ class TaskManager:
         t = self._tasks.get(task_id)
         if not t:
             return False
+        # Actually stop a running asyncio task (FIX 3 — real cancel).
+        running = self._running.pop(task_id, None)
+        if running and not running.done():
+            running.cancel()
         t.status = TaskStatus.CANCELLED.value
         t.finished_at = time.time()
         self.store.upsert(t)
         self._emit("task.cancelled", t)
+        logger.info(f"Task cancelled: {t.name} ({task_id})")
         return True
 
     def retry(self, task_id: str) -> bool:
@@ -294,6 +322,7 @@ class TaskManager:
             return False
         t.status = TaskStatus.CREATED.value
         t.error = None
+        t._attempt = 0
         self._enqueue(t)
         self._emit("task.resumed", t)
         return True
@@ -320,15 +349,85 @@ class TaskManager:
             t.cancel()
         if self._loop_task:
             self._loop_task.cancel()
+        # FIX 1: checkpoint every in-flight task so a later boot can resume.
+        self.checkpoint_all()
+
+    def checkpoint_all(self) -> None:
+        """Persist progress for all live tasks (Section 29/52)."""
+        for task in self._tasks.values():
+            if task.status in (TaskStatus.RUNNING.value, TaskStatus.PAUSED.value,
+                               TaskStatus.QUEUED.value, TaskStatus.WAITING.value):
+                try:
+                    self.store.upsert(task)
+                except Exception as e:
+                    logger.warning(f"checkpoint_all: {e}")
 
     def _resume_persisted(self):
+        """FIX 2: recover tasks from the previous run (Section 30/53).
+
+        Persisted rows are rebuilt into BackgroundTask objects and re-enqueued
+        if resumable (QUEUED/RUNNING/PAUSED/WAITING and has a known factory).
+        Tasks whose coroutine cannot be resolved are marked FAILED with a clear
+        reason instead of silently vanishing.
+        """
         try:
             rows = self.store.load_unfinished()
         except Exception as e:
             logger.warning(f"Could not resume persisted tasks: {e}")
             return
         for row in rows:
-            logger.info(f"Recoverable task found on boot: {row['name']} ({row['status']})")
+            try:
+                task = self._task_from_row(row)
+                self._tasks[task.id] = task
+                resumable = task.status in (
+                    TaskStatus.QUEUED.value, TaskStatus.RUNNING.value,
+                    TaskStatus.WAITING.value, TaskStatus.PAUSED.value,
+                )
+                if not resumable:
+                    continue
+                # If we can't rebuild the coroutine, the task can't run.
+                if resumable and self._resolve_coroutine(task) is None:
+                    logger.warning(
+                        f"Task '{task.name}' recovered but no factory registered; marking FAILED"
+                    )
+                    task.status = TaskStatus.FAILED.value
+                    task.error = "recovered without executable coroutine"
+                    self.store.upsert(task)
+                    self._emit("task.failed", task)
+                    continue
+                # Re-enqueue: PAUSED stays PAUSED until user resumes; others run.
+                if task.status == TaskStatus.PAUSED.value:
+                    continue
+                task.status = TaskStatus.QUEUED.value
+                self.store.upsert(task)
+                self._enqueue(task)
+                logger.info(f"Recovered task on boot: {task.name} ({task.id}) -> {task.status}")
+            except Exception as e:
+                logger.error(f"Failed to recover task {row.get('id')}: {e}")
+
+    @staticmethod
+    def _task_from_row(row: dict) -> BackgroundTask:
+        payload = json.loads(row.get("payload") or "{}")
+        retry = json.loads(row.get("retry_policy") or "{}")
+        res = json.loads(row.get("resources") or "{}")
+        deps = json.loads(row.get("dependencies") or "[]")
+        return BackgroundTask(
+            id=row["id"], name=row["name"], priority=row.get("priority", "NORMAL"),
+            type=row.get("type", "BACKGROUND"), status=row.get("status", "QUEUED"),
+            progress=row.get("progress", 0.0),
+            args=tuple(payload.get("args", [])), kwargs=payload.get("kwargs", {}),
+            max_cpu=res.get("max_cpu", 25), max_memory_mb=res.get("max_memory_mb", 300),
+            network_required=res.get("network", False), gpu_required=res.get("gpu", False),
+            estimated_duration_s=res.get("estimated", 0),
+            max_retries=retry.get("max_retries", 2),
+            retry_backoff_s=retry.get("backoff", 5.0),
+            retryable=retry.get("retryable", True),
+            created_at=row.get("created_at", time.time()),
+            started_at=row.get("started_at"), finished_at=row.get("finished_at"),
+            checkpoint=json.loads(row.get("checkpoint") or "{}"),
+            dependencies=deps, error=row.get("error"),
+            result=json.loads(row["result"]) if row.get("result") else None,
+        )
 
     async def _scheduler_loop(self):
         while self._running_flag:
@@ -378,35 +477,20 @@ class TaskManager:
                     await asyncio.sleep(0.5)
 
     def _should_throttle(self, task: BackgroundTask) -> bool:
-        # Foreground/critical never throttled (Section 27/76).
-        if TaskPriority(task.priority) in (TaskPriority.CRITICAL, TaskPriority.HIGH):
-            return False
-        # Pause background work on demand (Section 51 / 48).
-        if self._paused_background and TaskPriority(task.priority) in (
-            TaskPriority.BACKGROUND, TaskPriority.IDLE, TaskPriority.LOW
-        ):
-            return True
-        metrics = self._res_mgr.get_system_metrics()
-        ram_pct = metrics.get("ram_percent", 0)
-        cpu_pct = metrics.get("cpu_percent", 0)
-        # Section 48 policy (configurable via config thresholds).
-        if ram_pct > 90 or cpu_pct > 85:
-            # throttle everything except critical/high
-            return True
-        if ram_pct > 80 and TaskPriority(task.priority) == TaskPriority.IDLE:
-            return True
-        return False
+        # Delegate to the authoritative ResourceManager policy (Section 27/48).
+        return self._res_mgr.should_throttle(task.priority)
 
     async def _run_task(self, task: BackgroundTask):
         async with self._semaphore:
             try:
-                if task.coroutine is None:
-                    raise ValueError("Task has no coroutine")
+                coro = self._resolve_coroutine(task)
+                if coro is None:
+                    raise ValueError("Task has no resolvable coroutine")
                 # Inject progress + checkpoint helpers into kwargs.
                 kwargs = dict(task.kwargs)
                 kwargs.setdefault("_task", task)
                 kwargs.setdefault("_manager", self)
-                await task.coroutine(*task.args, **kwargs)
+                await coro(*task.args, **kwargs)
                 task.status = TaskStatus.COMPLETED.value
                 task.progress = 100.0
                 task.finished_at = time.time()
@@ -414,9 +498,12 @@ class TaskManager:
                 self._emit("task.completed", task)
                 self._notify_completion(task)
             except asyncio.CancelledError:
-                task.status = TaskStatus.PAUSED.value
+                # Real pause/cancel requested via pause()/cancel() already set
+                # the authoritative status; keep it. Remove from the running map.
+                self._running.pop(task.id, None)
                 self.store.upsert(task)
-                raise
+                # Do NOT re-raise: this is an expected cooperative cancellation.
+                return
             except Exception as e:
                 task._attempt += 1
                 task.error = str(e)[:300]
@@ -433,10 +520,18 @@ class TaskManager:
                     task.finished_at = time.time()
                     self.store.upsert(task)
                     self._emit("task.failed", task)
+            finally:
+                # Always drop the handle so it can't leak (FIX 3).
+                self._running.pop(task.id, None)
 
     # --- resource controls (Section 48/49/75) -------------------------
     def set_background_paused(self, paused: bool):
         self._paused_background = paused
+        # Keep the authoritative ResourceManager in sync (Section 48/51).
+        if paused:
+            self._res_mgr.pause_background_tasks()
+        else:
+            self._res_mgr.resume_background_tasks()
         logger.info(f"Background tasks {'PAUSED' if paused else 'RESUMED'}")
 
     def set_pool_size(self, n: int):

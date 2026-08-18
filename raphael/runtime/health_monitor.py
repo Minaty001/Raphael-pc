@@ -10,9 +10,12 @@ notified (Section 10). No single background worker may kill Raphael.
 
 import asyncio
 import time
+import shutil
+import psutil
 from typing import Dict, Any, Callable, Awaitable, Optional
 from raphael.core.logging import get_logger
 from raphael.core.event_bus import get_event_bus
+from raphael.core.configuration import get_config
 
 logger = get_logger("runtime.health")
 
@@ -22,6 +25,8 @@ class RuntimeHealthMonitor:
         # Each entry: name -> {"status", "detail", "last_checked"}
         self._components: Dict[str, Dict[str, Any]] = {}
         self._start_time = time.time()
+        self._probes: Dict[str, Callable[[], Awaitable[Dict[str, Any]]]] = {}
+        self._register_default_probes()
 
     def register(self, name: str, status: str = "ok", detail: str = "") -> None:
         self._components[name] = {
@@ -38,17 +43,86 @@ class RuntimeHealthMonitor:
         self._components[name]["detail"] = detail
         self._components[name]["last_checked"] = time.time()
 
+    def register_probe(self, name: str, probe: Callable[[], Awaitable[Dict[str, Any]]]) -> None:
+        """Register an active health probe that runs on each snapshot (FIX 10)."""
+        self._probes[name] = probe
+        if name not in self._components:
+            self.register(name, "unknown", "probe registered")
+
+    def _register_default_probes(self):
+        cfg = get_config()
+        # Memory DB probe: can we open the SQLite store?
+        async def _probe_memory() -> Dict[str, Any]:
+            try:
+                from raphael.memory.long_term import get_long_term_memory
+                ltm = get_long_term_memory()
+                conn = ltm._get_connection()
+                conn.execute("SELECT 1 FROM memories LIMIT 1")
+                conn.close()
+                return {"status": "healthy", "detail": "memory db reachable"}
+            except Exception as e:
+                return {"status": "error", "detail": f"memory db: {e}"}
+
+        # WebSocket probe: any clients connected?
+        async def _probe_websocket() -> Dict[str, Any]:
+            try:
+                from raphael.network.websocket import get_ws_manager
+                n = len(get_ws_manager().active_connections)
+                return {"status": "connected" if n >= 0 else "error",
+                        "detail": f"{n} client(s)"}
+            except Exception as e:
+                return {"status": "error", "detail": f"ws: {e}"}
+
+        # LLM probe: is a provider reachable?
+        async def _probe_llm() -> Dict[str, Any]:
+            try:
+                from raphael.brain.llm_router import get_llm_router
+                name, _ = await get_llm_router().get_active_provider()
+                return {"status": "available", "detail": f"provider {name}"}
+            except Exception as e:
+                return {"status": "error", "detail": f"llm: {e}"}
+
+        # Voice probe: mic + wakeword availability (non-fatal if missing).
+        async def _probe_voice() -> Dict[str, Any]:
+            try:
+                from raphael.voice.wakeword import get_wake_word_detector
+                wd = get_wake_word_detector()
+                return {"status": "ready" if wd.enabled else "paused",
+                        "detail": "wake detector" + ("" if wd.enabled else " (disabled)")}
+            except Exception as e:
+                return {"status": "error", "detail": f"voice: {e}"}
+
+        self.register_probe("memory", _probe_memory)
+        self.register_probe("websocket", _probe_websocket)
+        self.register_probe("llm", _probe_llm)
+        self.register_probe("voice", _probe_voice)
+
     async def snapshot(self) -> Dict[str, Any]:
-        """Section 9 example shape."""
+        """Section 9 example shape, with AUTHORITATIVE live probes (FIX 10)."""
         now = time.time()
+        # Run registered probes to get real status (not just startup flags).
+        for name, probe in self._probes.items():
+            try:
+                res = await probe()
+                self._components.setdefault(name, {})
+                self._components[name]["status"] = res["status"]
+                self._components[name]["detail"] = res.get("detail", "")
+                self._components[name]["last_checked"] = now
+            except Exception as e:
+                self._components.setdefault(name, {})
+                self._components[name]["status"] = "error"
+                self._components[name]["detail"] = str(e)[:120]
+                self._components[name]["last_checked"] = now
+
+        # Core/wakeword/scheduler are process-internal: derive from running flags.
         return {
             "runtime": "alive",
             "uptime_seconds": int(now - self._start_time),
             "components": {
                 name: {
                     "status": info["status"],
-                    "detail": info["detail"],
-                    "stale_seconds": round(now - info["last_checked"], 1),
+                    "detail": info.get("detail", ""),
+                    "stale_seconds": round(now - info.get("last_checked", now), 1),
                 }
                 for name, info in self._components.items()
             },

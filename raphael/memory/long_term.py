@@ -99,16 +99,42 @@ class LongTermMemory:
             """)
 
             # 6. episodes (L2 Episodic Memory)
+            # Owned by raphael/memory/episodic_memory.py. We declare a compatible
+            # schema here so the table exists regardless of import order, but the
+            # summary-based schema is authoritative (FIX 0 — avoid dual schema).
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS episodes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    action TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    details_json TEXT,
-                    project TEXT,
+                    summary TEXT NOT NULL,
+                    category TEXT DEFAULT 'general',
+                    entities TEXT,
+                    importance REAL DEFAULT 0.7,
+                    confidence REAL DEFAULT 0.9,
+                    source TEXT DEFAULT 'user_interaction',
                     timestamp REAL NOT NULL
                 )
             """)
+            # Upgrade any legacy action/details-based episodes table.
+            cols = [c["name"] for c in cursor.execute("PRAGMA table_info(episodes)").fetchall()]
+            if "action" in cols and "summary" not in cols:
+                logger.info("Migrating episodes table -> episodic schema")
+                cursor.execute("ALTER TABLE episodes RENAME TO episodes_legacy_tmp")
+                cursor.execute("""
+                    CREATE TABLE episodes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        summary TEXT NOT NULL,
+                        category TEXT DEFAULT 'general',
+                        entities TEXT,
+                        importance REAL DEFAULT 0.7,
+                        confidence REAL DEFAULT 0.9,
+                        source TEXT DEFAULT 'user_interaction',
+                        timestamp REAL NOT NULL
+                    )
+                """)
+                cursor.execute(
+                    "INSERT INTO episodes (id, timestamp) SELECT id, timestamp FROM episodes_legacy_tmp"
+                )
+                cursor.execute("DROP TABLE episodes_legacy_tmp")
 
             # 7. procedures (L4 Procedural Memory)
             cursor.execute("""
@@ -191,9 +217,17 @@ class LongTermMemory:
                     topic TEXT UNIQUE NOT NULL,
                     status TEXT DEFAULT 'open',
                     priority REAL DEFAULT 0.5,
-                    created_at REAL NOT NULL
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
                 )
             """)
+            # Migration guard: the same table is also declared in
+            # raphael/brain/open_loops.py. Ensure the `updated_at` column exists
+            # regardless of which module created the table first (FIX 0).
+            cols = [c["name"] for c in cursor.execute("PRAGMA table_info(open_loops)").fetchall()]
+            if "updated_at" not in cols:
+                logger.info("Migrating open_loops: adding updated_at column")
+                cursor.execute("ALTER TABLE open_loops ADD COLUMN updated_at REAL NOT NULL DEFAULT 0")
 
             # 14. events
             cursor.execute("""

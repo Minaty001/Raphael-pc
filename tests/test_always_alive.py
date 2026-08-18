@@ -107,7 +107,7 @@ def test_task_lifecycle_states():
 def test_task_resource_throttle():
     mgr = TaskManager()
     mgr._running_flag = True
-    mgr._paused_background = True
+    mgr.set_background_paused(True)
     # A low-priority task should be throttled when background paused.
     t = type("_T", (), {"priority": TaskPriority.LOW.value})()
     assert mgr._should_throttle(t) is True
@@ -118,6 +118,46 @@ def test_task_resource_throttle():
 
 async def _fake_coro(**kwargs):
     await asyncio.sleep(0.01)
+
+
+def test_pause_cancels_running_task():
+    async def _run():
+        mgr = TaskManager()
+        mgr._running_flag = True
+        mgr.set_background_paused(False)
+        # Prevent resource throttling from interfering in the test.
+        mgr._res_mgr._background_paused = False
+        tid = mgr.create("long job", lambda **kw: asyncio.sleep(5), priority=TaskPriority.LOW.value)
+        loop = asyncio.get_event_loop()
+        t = loop.create_task(mgr._scheduler_loop())
+        # Poll until the task actually enters RUNNING (timing-tolerant).
+        for _ in range(50):
+            if mgr.get(tid).status == TaskStatus.RUNNING.value:
+                break
+            await asyncio.sleep(0.05)
+        assert mgr.get(tid).status == TaskStatus.RUNNING.value
+        assert tid in mgr._running
+        mgr.pause(tid)
+        await asyncio.sleep(0.1)
+        assert mgr.get(tid).status == TaskStatus.PAUSED.value
+        # underlying asyncio task actually cancelled
+        assert tid not in mgr._running
+        t.cancel()
+
+    asyncio.run(_run())
+
+
+def test_recovery_rebuilds_from_db():
+    """FIX 2: a persisted task can be rebuilt from the store (factory path)."""
+    mgr = TaskManager()
+    mgr._running_flag = True
+    tid = mgr.create("indexer", _fake_coro, priority=TaskPriority.BACKGROUND.value)
+    rows = mgr.store.load_unfinished()
+    by_id = {r["id"]: r for r in rows}
+    assert tid in by_id
+    rebuilt = mgr._task_from_row(by_id[tid])
+    assert rebuilt.id == tid
+    assert rebuilt.name == "indexer"
 
 
 def test_task_runs_to_completion():
@@ -132,4 +172,4 @@ def test_task_runs_to_completion():
         task.cancel()
         assert len(results) == 1
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())

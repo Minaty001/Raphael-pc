@@ -2,12 +2,14 @@
 """
 RaphaelTray — Linux system tray for Raphael v3 (Sections 5-7).
 
-Shows live runtime state in the tray (ALIVE / LISTENING / WORKING / PAUSED /
-ERROR / OFFLINE) and provides a menu matching the spec:
-  Open Raphael | Pause Listening | Pause Background Tasks | Focus Mode | Settings | Exit
+FIX 9 — Tray + startup integration with the runtime.
+Shows live runtime state (ALIVE / LISTENING / WORKING / PAUSED / ERROR /
+OFFLINE) by polling the runtime's REST API and provides the spec menu:
+  Open Raphael | Pause Listening | Pause Background Tasks | Focus Mode |
+  Resume Normal | Settings | Exit Raphael
 
-Uses pystray if available; otherwise prints a clear notice and falls back to a
-status loop. pystray is optional so the runtime does not hard-depend on a GUI lib.
+Uses pystray if available; otherwise prints a clear notice and runs a status
+loop. pystray is optional so the runtime does not hard-depend on a GUI lib.
 
 Run:  python3 scripts/raphael_tray.py
 """
@@ -20,21 +22,19 @@ import threading
 import urllib.request
 from datetime import datetime
 
-try:
-    import pystray
-    from PIL import Image, ImageDraw
-    HAVE_TRAY = True
-except Exception:
-    HAVE_TRAY = False
-
-CONFIG = get_config = None
+HAVE_TRAY = False
+HOST, PORT = "127.0.0.1", 8765
 try:
     sys.path.insert(0, os.path.expanduser("~/Raphael-pc"))
     from raphael.core.configuration import get_config
-    HOST = get_config().websocket.host
-    PORT = get_config().websocket.port
+    _cfg = get_config()
+    HOST = _cfg.websocket.host
+    PORT = _cfg.websocket.port
+    import pystray  # noqa: F401
+    from PIL import Image, ImageDraw  # noqa: F401
+    HAVE_TRAY = True
 except Exception:
-    HOST, PORT = "127.0.0.1", 8765
+    HAVE_TRAY = False
 
 BASE = f"http://{HOST}:{PORT}"
 
@@ -45,6 +45,18 @@ def _get(path):
             return json.loads(r.read().decode())
     except Exception:
         return None
+
+
+def _post(path, payload=None):
+    try:
+        data = json.dumps(payload or {}).encode()
+        req = urllib.request.Request(
+            BASE + path, data=data,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception as e:
+        print("tray action failed:", e)
 
 
 # ---- tray icon rendering --------------------------------------------------
@@ -76,7 +88,6 @@ def _status():
         return "ERROR"
     if mode and mode.get("mode") in ("PAUSE", "SLEEP"):
         return "PAUSED"
-    # Determine working vs listening via voice component if present.
     return "ALIVE"
 
 
@@ -97,22 +108,14 @@ def _open_ui():
         os.system(f"xdg-open {url} >/dev/null 2>&1 &")
 
 
-def _post(path, payload=None):
-    try:
-        data = json.dumps(payload or {}).encode()
-        req = urllib.request.Request(BASE + path, data=data, headers={"Content-Type": "application/json"}, method="POST")
-        urllib.request.urlopen(req, timeout=2)
-    except Exception as e:
-        print("tray action failed:", e)
-
-
 def _build_menu():
     import pystray
     return pystray.Menu(
         pystray.MenuItem("Open Raphael", lambda i, m: _open_ui()),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Status: Alive", lambda i, m: None, enabled=False),
         pystray.MenuItem("Pause Listening", lambda i, m: _post("/api/runtime/mode", {"mode": "PAUSE"})),
-        pystray.MenuItem("Pause Background Tasks", lambda i, m: _post("/api/tasks"), ),
+        pystray.MenuItem("Pause Background Tasks", lambda i, m: _post("/api/runtime/mode", {"mode": "FOCUS"})),
         pystray.MenuItem("Focus Mode", lambda i, m: _post("/api/runtime/mode", {"mode": "FOCUS"})),
         pystray.MenuItem("Resume Normal", lambda i, m: _post("/api/runtime/mode", {"mode": "NORMAL"})),
         pystray.Menu.SEPARATOR,

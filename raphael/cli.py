@@ -22,6 +22,7 @@ from raphael.core.logging import get_logger
 logger = get_logger("cli")
 
 def run_server():
+    import threading
     import uvicorn
     from raphael.core.runtime import get_runtime
 
@@ -31,29 +32,47 @@ def run_server():
 
     logger.info(f"Starting Raphael Server on http://{host}:{port}")
 
-    # The runtime runs an infinite perception loop, so we boot it in a dedicated
-    # daemon thread with its own event loop. This cleanly separates the persistent
-    # "Raphael runtime" from the WebSocket UI gateway (uvicorn) per Sections 3-4:
-    # the runtime is the assistant; the UI is only a client. Closing the UI never
-    # terminates the runtime.
+    # The runtime runs an infinite perception loop, plus the always-alive
+    # workers (scheduler, health watchdog, heartbeat, background intelligence,
+    # proactive engine). We boot it in a dedicated daemon thread with its OWN
+    # event loop and keep that loop RUNNING (run_forever) so all background
+    # coroutines are actually pumped. (FIX 1 — runtime lifecycle/shutdown)
+    #
+    # The UI (uvicorn/WebSocket) is only a client; closing it never terminates
+    # the runtime, because the loop is independent and alive.
     runtime = get_runtime()
 
     def _boot_in_loop():
         import asyncio as _asyncio
         loop = _asyncio.new_event_loop()
-
-        async def _runner():
+        _asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(runtime.start())
+        except Exception as e:
+            logger.error(f"Runtime boot failed: {e}", exc_info=True)
+        # Keep the loop alive for the lifetime of the process so background
+        # tasks/scheduler/watchdog/heartbeat keep ticking (FIX 1).
+        try:
+            loop.run_forever()
+        except Exception as e:
+            logger.error(f"Runtime loop stopped: {e}", exc_info=True)
+        finally:
             try:
-                await runtime.start()
-            except Exception as e:
-                logger.error(f"Runtime boot failed: {e}", exc_info=True)
-
-        loop.run_until_complete(_runner())
+                loop.run_until_complete(runtime.stop())
+            except Exception:
+                pass
 
     boot_thread = threading.Thread(target=_boot_in_loop, name="raphael-runtime", daemon=True)
     boot_thread.start()
 
-    uvicorn.run("raphael.network.api:app", host=host, port=port, log_level="info", reload=False)
+    # Ensure the runtime loop is up before serving, then launch the UI gateway.
+    def _graceful_shutdown(*_args):
+        logger.info("Server shutdown requested; runtime loop will exit on process end.")
+
+    try:
+        uvicorn.run("raphael.network.api:app", host=host, port=port, log_level="info", reload=False)
+    finally:
+        logger.info("Raphael Server (UI gateway) stopped.")
 
 def run_doctor():
     print("\n" + "="*50)

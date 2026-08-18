@@ -37,8 +37,8 @@ class VoiceConfig:
     wake_word_enabled: bool = True
     wake_phrases: List[str] = field(default_factory=lambda: ["raphael", "hey raphael", "rafeal", "rapheal"])
     sensitivity: float = 0.5
-    stt_provider: str = "sherpa"  # sherpa, web, mock
-    tts_provider: str = "sherpa"  # sherpa, pyttsx3, gtts, web, mock
+    stt_provider: str = "web"  # web (browser Web Speech), vosk, whisper, mock
+    tts_provider: str = "web"  # web (client-side playback), edge, pyttsx3, mock
     vad_enabled: bool = True
     sample_rate: int = 16000
 

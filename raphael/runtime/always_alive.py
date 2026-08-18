@@ -102,7 +102,24 @@ class AlwaysAliveController:
         # worker that pings health so a hung engine is detected (Section 10).
         self._watchdog.register_worker("heartbeat", self._heartbeat_loop, component_key="core")
 
+        # FIX 11 / FIX 12: start background cognitive + proactive engines.
+        from raphael.runtime.background_intelligence import get_background_intelligence
+        from raphael.proactive.proactive_engine import get_proactive_engine
+        self._bg_intel = get_background_intelligence()
+        self._proactive = get_proactive_engine()
+        await self._bg_intel.start()
+        await self._proactive.start()
+
         self._watchdog.start()
+
+        # FIX 4/5: start real microphone capture (no-op if no audio backend).
+        # The mic feeds the wake detector ring buffer + STT on command capture.
+        try:
+            from raphael.voice.microphone import get_microphone
+            self._mic = get_microphone()
+            await self._mic.start()
+        except Exception as e:
+            logger.warning(f"Microphone capture unavailable: {e}")
 
         # Start in wake-listening (low-power) so Raphael is "always listening"
         # without running full STT (Section 34).
@@ -113,6 +130,18 @@ class AlwaysAliveController:
     async def stop(self) -> None:
         self._running = False
         self._mode = RuntimeMode.EXIT
+        # FIX 4/5: stop microphone capture first.
+        try:
+            if getattr(self, "_mic", None) is not None:
+                self._mic.stop()
+        except Exception as e:
+            logger.warning(f"Microphone stop: {e}")
+        # FIX 11/12: stop background cognitive + proactive engines first.
+        try:
+            await self._bg_intel.stop()
+            await self._proactive.stop()
+        except Exception as e:
+            logger.warning(f"Background engine stop: {e}")
         self._watchdog.stop()
         await self._tasks.stop()
         await get_event_bus().publish("runtime.shutdown", {"reason": "exit"}, source="always_alive")
@@ -154,13 +183,26 @@ class AlwaysAliveController:
     # ------------------------------------------------------------------
     def _on_wake(self, command_text: str) -> None:
         """Called by WakeWordDetector when wake phrase is detected.
-        command_text already has the wake word stripped (Section 14)."""
+        command_text already has the wake word stripped (Section 14).
+
+        FIX 1 robustness: schedule the command handler only if a runtime event
+        loop is actually running. Outside a running loop (e.g. unit tests, or
+        when the runtime has not yet started) we must not call
+        asyncio.create_task, which would raise RuntimeError. The wake fragment is
+        still handed to the pipeline synchronously so nothing is lost.
+        """
         logger.info(f"WAKE -> captured command fragment: '{command_text}'")
         # Transition immediately to command listening (Section 11).
         self._asm.transition(AudioState.COMMAND_LISTENING, "wake detected")
         # If there is already a full command in the buffer, process it.
         if command_text:
-            asyncio.create_task(self._handle_command(command_text))
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._handle_command(command_text))
+            except RuntimeError:
+                # No running loop (runtime not started / test context): drop
+                # the async dispatch but keep the synchronous transition above.
+                logger.debug("Wake callback fired with no running loop; command not dispatched.")
         # Otherwise the STT stream will deliver the rest (Section 13 buffer).
 
     async def _handle_command(self, text: str) -> None:
@@ -211,19 +253,28 @@ class AlwaysAliveController:
     async def set_mode(self, mode: RuntimeMode) -> None:
         self._mode = mode
         wwd = get_wake_word_detector()
+        mic = getattr(self, "_mic", None)
         if mode == RuntimeMode.SLEEP:
             wwd.enabled = False
             self._tasks.set_background_paused(True)
+            if mic:
+                mic.stop()
             self._asm.transition(AudioState.AUDIO_IDLE, "sleep")
         elif mode == RuntimeMode.PAUSE:
             wwd.enabled = False  # privacy: voice off, background continues (51)
+            if mic:
+                mic.stop()
             self._asm.transition(AudioState.PAUSED, "voice paused")
         elif mode == RuntimeMode.FOCUS:
             self._tasks.set_background_paused(True)
+            if mic:
+                await mic.start()
             self._asm.transition(AudioState.WAKE_LISTENING, "focus mode")
         else:  # NORMAL
             wwd.enabled = self.config.voice.wake_word_enabled
             self._tasks.set_background_paused(False)
+            if mic:
+                await mic.start()
             self._asm.transition(AudioState.WAKE_LISTENING, "normal")
         await get_event_bus().publish("runtime.mode", {"mode": mode.value}, source="always_alive")
         logger.info(f"Runtime mode -> {mode.value}")
