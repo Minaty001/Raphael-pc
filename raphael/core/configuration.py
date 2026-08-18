@@ -9,6 +9,34 @@ import json
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional
 
+# --- Minimal .env loader (stdlib only, no new dependency) -------------------
+# Loads a local .env file (gitignored) so secrets like GROQ_API_KEY never have
+# to live in committed source. Only sets vars that are not already in the env.
+def _load_dotenv() -> None:
+    candidates = [
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+        os.path.expanduser("~/.raphael/.env"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        key, _, val = line.partition("=")
+                        key, val = key.strip(), val.strip().strip('"').strip("'")
+                        if key and key not in os.environ:
+                            os.environ[key] = val
+                break
+            except Exception:
+                pass
+
+_load_dotenv()
+
+
 def get_default_data_dir() -> str:
     user_dir = os.path.expanduser("~/.raphael")
     try:
@@ -44,14 +72,23 @@ class VoiceConfig:
 
 @dataclass
 class LLMConfig:
-    primary_provider: str = "ollama"  # ollama, openrouter, groq, openai, mock
+    primary_provider: str = "groq"  # ollama, openrouter, groq, openai, mock
     fallback_provider: str = "mock"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3:8b"
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Free-tier Groq models (default + alternates for the Settings UI).
+    groq_model: str = "llama-3.3-70b-versatile"  # free
+    groq_free_models: List[str] = field(default_factory=lambda: [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "gemma2-9b-it",
+        "mixtral-8x7b-32768",
+    ])
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = "gpt-4o-mini"
     max_tokens: int = 1024
@@ -171,7 +208,37 @@ class RaphaelConfig:
     def load_defaults(cls) -> "RaphaelConfig":
         config = cls()
         os.makedirs(config.app.data_dir, exist_ok=True)
+        config._apply_overrides()
         return config
+
+    def _overrides_path(self) -> str:
+        return os.path.join(self.app.data_dir, "config.override.json")
+
+    def _apply_overrides(self) -> None:
+        """Load persisted overrides (e.g. chosen LLM provider/model) if present."""
+        path = self._overrides_path()
+        if not os.path.isfile(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            update_config(data)
+        except Exception:
+            pass
+
+    def save_overrides(self, updates: Dict[str, Any]) -> None:
+        """Persist a subset of config (no secrets) to an override file."""
+        path = self._overrides_path()
+        existing = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    existing = json.load(fh)
+            except Exception:
+                existing = {}
+        existing.update(updates)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(existing, fh, indent=2)
 
 _current_config: Optional[RaphaelConfig] = None
 

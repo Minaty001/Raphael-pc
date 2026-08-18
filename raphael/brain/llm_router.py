@@ -108,6 +108,55 @@ class OpenRouterProvider(LLMProvider):
             yield chunk + " "
             await asyncio.sleep(0.02)
 
+class GroqProvider(LLMProvider):
+    """Groq Cloud LLM (OpenAI-compatible chat completions API)."""
+    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile"):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = "https://api.groq.com/openai/v1/chat/completions"
+
+    async def is_available(self) -> bool:
+        # Free-tier Groq models are gated only by a valid key.
+        return bool(self.api_key and len(self.api_key) > 10)
+
+    async def chat(self, messages: List[Dict[str, str]]) -> str:
+        if not self.api_key:
+            raise ValueError("Groq API Key not set (set GROQ_API_KEY env or .env)")
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 1024,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        req = urllib.request.Request(self.base_url, data=data, headers=headers, method="POST")
+
+        def _do_request() -> str:
+            with urllib.request.urlopen(req, timeout=30.0) as resp:
+                res_body = resp.read().decode("utf-8")
+                parsed = json.loads(res_body)
+                choices = parsed.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "")
+                # Surface API-level errors instead of returning empty silently.
+                if "error" in parsed:
+                    raise RuntimeError(f"Groq API error: {parsed['error']}")
+                return ""
+
+        return await asyncio.to_thread(_do_request)
+
+    async def stream(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
+        full_res = await self.chat(messages)
+        for chunk in full_res.split(" "):
+            yield chunk + " "
+            await asyncio.sleep(0.02)
+
+
 class LocalMockProvider(LLMProvider):
     async def is_available(self) -> bool:
         return True
@@ -125,11 +174,21 @@ class LocalMockProvider(LLMProvider):
 class LLMRouter:
     def __init__(self):
         self.config = get_config()
-        self.providers: Dict[str, LLMProvider] = {
+        self.providers: Dict[str, LLMProvider] = {}
+        self._build_providers()
+
+    def _build_providers(self) -> None:
+        self.config = get_config()
+        self.providers = {
             "ollama": OllamaProvider(self.config.llm.ollama_host, self.config.llm.ollama_model),
+            "groq": GroqProvider(self.config.llm.groq_api_key, self.config.llm.groq_model),
             "openrouter": OpenRouterProvider(self.config.llm.openrouter_api_key, self.config.llm.openrouter_model),
             "mock": LocalMockProvider()
         }
+
+    def rebuild(self) -> None:
+        """Re-read configuration and rebuild provider instances (live config change)."""
+        self._build_providers()
 
     async def get_active_provider(self) -> Tuple[str, LLMProvider]:
         primary_name = self.config.llm.primary_provider

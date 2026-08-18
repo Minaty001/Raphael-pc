@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Settings as SettingsIcon, Shield, Sliders, Mic, Eye, Brain, Cloud, Sparkles } from "lucide-react";
 
 export const SettingsPage: React.FC = () => {
@@ -8,6 +8,38 @@ export const SettingsPage: React.FC = () => {
   const [memory, setMemory] = useState(true);
   const [cloud, setCloud] = useState(true);
   const [proactive, setProactive] = useState(true);
+
+  const [llm, setLlm] = useState<{ primary_provider: string; groq_model: string; groq_free_models: string[]; providers: string[] }>({
+    primary_provider: "groq",
+    groq_model: "llama-3.3-70b-versatile",
+    groq_free_models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"],
+    providers: ["groq", "ollama", "openrouter", "mock"],
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("http://localhost:8765/api/config/llm")
+      .then((r) => r.json())
+      .then(setLlm)
+      .catch(() => {});
+  }, []);
+
+  const applyLlm = async (patch: Partial<{ provider: string; groq_model: string }>) => {
+    setSaving(true);
+    try {
+      const res = await fetch("http://localhost:8765/api/config/llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLlm((p) => ({ ...p, primary_provider: data.primary_provider, groq_model: data.groq_model }));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const autonomyLevels = [
     "Level 0: Chat Only",
@@ -130,6 +162,46 @@ export const SettingsPage: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* LLM Provider (Groq / Ollama / OpenRouter / Mock) */}
+      <div className="glass-panel p-5 space-y-4">
+        <div className="flex items-center gap-2 font-bold text-white font-primary text-xs border-b border-[var(--border)] pb-2">
+          <Cloud className="w-4 h-4 text-[var(--accent-primary)]" /> LLM PROVIDER (GROQ FREE MODELS)
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <span className="text-[10px] text-[var(--text-muted)] uppercase">Active Provider</span>
+            <select
+              value={llm.primary_provider}
+              disabled={saving}
+              onChange={(e) => applyLlm({ provider: e.target.value })}
+              className="w-full bg-[var(--bg-secondary)] border border-[var(--border)] rounded px-2 py-1.5 text-slate-200 text-xs"
+            >
+              {llm.providers.map((p) => (
+                <option key={p} value={p}>{p.toUpperCase()}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-[10px] text-[var(--text-muted)] uppercase">Groq Model</span>
+            <select
+              value={llm.groq_model}
+              disabled={saving || llm.primary_provider !== "groq"}
+              onChange={(e) => applyLlm({ groq_model: e.target.value })}
+              className="w-full bg-[var(--bg-secondary)] border border-[var(--border)] rounded px-2 py-1.5 text-slate-200 text-xs disabled:opacity-40"
+            >
+              {llm.groq_free_models.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="text-[10px] text-[var(--text-muted)]">
+          Groq API key is loaded from a local .env file (never committed). Free models: llama-3.3-70b, llama-3.1-8b-instant, gemma2-9b-it, mixtral-8x7b, llama3-8b/70b.
+        </p>
       </div>
     </div>
   );

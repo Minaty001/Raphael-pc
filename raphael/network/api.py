@@ -104,6 +104,46 @@ async def status_check():
 async def get_configuration():
     return get_config().to_dict()
 
+@app.get("/api/config/llm")
+async def get_llm_config():
+    """Return LLM provider settings (no secrets) for the Settings UI."""
+    cfg = get_config().llm
+    return {
+        "primary_provider": cfg.primary_provider,
+        "fallback_provider": cfg.fallback_provider,
+        "groq_model": cfg.groq_model,
+        "groq_free_models": cfg.groq_free_models,
+        "ollama_model": cfg.ollama_model,
+        "openrouter_model": cfg.openrouter_model,
+        "openai_model": cfg.openai_model,
+        "providers": ["groq", "ollama", "openrouter", "mock"],
+    }
+
+@app.post("/api/config/llm")
+async def set_llm_config(payload: Dict[str, Any] = Body(default={})):
+    """Set the active LLM provider and/or Groq model. Persists across restarts."""
+    allowed_providers = {"groq", "ollama", "openrouter", "mock"}
+    updates: Dict[str, Any] = {}
+    if "provider" in payload:
+        provider = payload["provider"]
+        if provider not in allowed_providers:
+            raise HTTPException(status_code=400, detail="Invalid provider")
+        updates["llm"] = updates.get("llm", {})
+        updates["llm"]["primary_provider"] = provider
+    if "groq_model" in payload:
+        model = payload["groq_model"]
+        if model not in get_config().llm.groq_free_models:
+            raise HTTPException(status_code=400, detail="Model not in free-models list")
+        updates["llm"] = updates.get("llm", {})
+        updates["llm"]["groq_model"] = model
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+    update_config(updates)
+    get_config().save_overrides(updates)
+    get_llm_router().rebuild()
+    return {"ok": True, "primary_provider": get_config().llm.primary_provider,
+            "groq_model": get_config().llm.groq_model}
+
 @app.get("/api/tools")
 async def list_available_tools():
     return get_tool_registry().list_tools()
