@@ -1,0 +1,82 @@
+@import './styles/tokens.css';
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(circle at 50% 20%, rgba(86, 217, 255, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(111, 140, 255, 0.04) 0%, transparent 40%);
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Glassmorphism Panel */
+.glass-panel {
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+  transition: border-color var(--transition-normal);
+}
+
+.glass-panel:hover {
+  border-color: rgba(86, 217, 255, 0.3);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(5, 8, 13, 0.7);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(86, 217, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(86, 217, 255, 0.5);
+}
+
+/* Breathing Animation for Orb */
+@keyframes orb-breathe {
+  0% { transform: scale(0.96); opacity: 0.85; filter: drop-shadow(0 0 12px var(--glow)); }
+  50% { transform: scale(1.04); opacity: 1; filter: drop-shadow(0 0 24px var(--accent-primary)); }
+  100% { transform: scale(0.96); opacity: 0.85; filter: drop-shadow(0 0 12px var(--glow)); }
+}
+
+@keyframes orb-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.orb-breathe {
+  animation: orb-breathe 4s ease-in-out infinite;
+}
+
+.orb-spin {
+  animation: orb-spin 12s linear infinite;
+}
+
+.orb-spin-fast {
+  animation: orb-spin 3s linear infinite;
+}
