@@ -63,12 +63,17 @@ class AppConfig:
 @dataclass
 class VoiceConfig:
     wake_word_enabled: bool = True
-    wake_phrases: List[str] = field(default_factory=lambda: ["raphael", "hey raphael", "rafeal", "rapheal"])
+    wake_phrases: List[str] = field(default_factory=lambda: [
+        "raphael", "hey raphael", "ok raphael", "hi raphael",
+        "rafael", "hey rafael", "ok rafael", "hi rafael",
+        "rafel", "hey rafel", "rafeal", "rapheal", "rafal"
+    ])
     sensitivity: float = 0.5
     stt_provider: str = "web"  # web (browser Web Speech), vosk, whisper, mock
     tts_provider: str = "web"  # web (client-side playback), edge, pyttsx3, mock
     vad_enabled: bool = True
     sample_rate: int = 16000
+    preferred_device: str = ""  # Substring match to force a specific mic (e.g. "AirPods"); empty = auto-detect
 
 @dataclass
 class LLMConfig:

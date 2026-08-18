@@ -33,7 +33,11 @@ from raphael.voice.audio_state import AudioState, get_audio_state_machine
 
 logger = get_logger("voice.wakeword")
 
-DEFAULT_WAKE_WORDS = ["raphael", "hey raphael", "rafeal", "rapheal"]
+DEFAULT_WAKE_WORDS = [
+    "raphael", "hey raphael", "ok raphael", "hi raphael",
+    "rafael", "hey rafael", "ok rafael", "hi rafael",
+    "rafel", "hey rafel", "rafeal", "rapheal", "rafal"
+]
 
 
 class WakeWordProvider:
@@ -70,10 +74,14 @@ class TranscriptWakeProvider(WakeWordProvider):
         self.wake_words = [w.lower().strip() for w in wake_words]
 
     def process_transcript(self, text: str) -> Optional[str]:
+        if not text:
+            return None
         clean = (text or "").lower().strip()
+        clean_no_punct = re.sub(r"[^\w\s]", " ", clean)
         # Prefer the longest matching phrase so "hey raphael" wins over "raphael".
         for kw in sorted(self.wake_words, key=len, reverse=True):
-            if re.search(r"\b" + re.escape(kw) + r"\b", clean):
+            kw_clean = re.sub(r"[^\w\s]", " ", kw.lower().strip())
+            if re.search(r"\b" + re.escape(kw_clean) + r"\b", clean_no_punct):
                 return kw
         return None
 
@@ -201,15 +209,42 @@ class WakeWordDetector:
             return porc
         return TranscriptWakeProvider(self.wake_words)
 
+    def _compute_rms(self, pcm: bytes) -> float:
+        """Compute Root Mean Square (RMS) energy level of 16-bit PCM audio."""
+        if not pcm or len(pcm) < 2:
+            return 0.0
+        import struct, math
+        num_samples = len(pcm) // 2
+        try:
+            samples = struct.unpack(f"<{num_samples}h", pcm[:num_samples * 2])
+            sum_squares = sum(s * s for s in samples)
+            return math.sqrt(sum_squares / num_samples)
+        except Exception:
+            return 0.0
+
+    def is_speech(self, pcm: bytes, threshold: float = 120.0) -> bool:
+        """Lightweight VAD check to detect if audio chunk contains speech energy."""
+        return self._compute_rms(pcm) >= threshold
+
     # ------------------------------------------------------------------
     # Audio ingestion (real capture path, Section 12/13)
     # ------------------------------------------------------------------
     def ingest_audio(self, pcm: bytes) -> bool:
-        """Feed a raw PCM chunk. Returns True if the KWS engine wakes."""
+        """Feed a raw PCM chunk. Returns True if the KWS engine wakes.
+        
+        Optimized for Always-On passive listening:
+          * Always buffers raw audio into the ring buffer so pre-wake words are saved.
+          * Applies lightweight VAD energy gating to bypass heavy processing on silence.
+        """
         if not self.enabled or not pcm:
             return False
         now = time.time()
         self.ring.push(pcm, now)
+
+        # Efficient passive listening: skip heavy engine processing if audio is silent
+        if not self.is_speech(pcm):
+            return False
+
         if self._provider.process_audio(pcm):
             logger.info("Wake word detected via audio KWS")
             self._trigger(now, "")
@@ -262,23 +297,26 @@ class WakeWordDetector:
         return " ".join(t for _, t in self._buffer).strip()
 
     def _find_wake(self, text: str) -> Optional[str]:
+        if not text:
+            return None
         clean = (text or "").lower().strip()
+        clean_no_punct = re.sub(r"[^\w\s]", " ", clean)
         for kw in sorted(self.wake_words, key=len, reverse=True):
-            if re.search(r"\b" + re.escape(kw) + r"\b", clean):
+            kw_clean = re.sub(r"[^\w\s]", " ", kw.lower().strip())
+            if re.search(r"\b" + re.escape(kw_clean) + r"\b", clean_no_punct):
                 return kw
         return None
 
     def _strip_wake(self, text: str, phrase: str) -> str:
-        if not phrase:
-            return text.strip()
-        # Strip the matched phrase wherever it appears (not just at start, since a
-        # longer variant like "hey raphael" may have already been reduced to its
-        # shorter match "raphael" which sits mid-string after a prefix).
-        pattern = re.compile(r"\s*\b" + re.escape(phrase) + r"\b\s*[,:]?", re.IGNORECASE)
-        stripped = pattern.sub(" ", text).strip()
-        # Also drop a leading invocation prefix if one remains (e.g. "hey", "ok").
-        stripped = re.sub(r"^(hey|ok|yo|hi)\s+", "", stripped, flags=re.IGNORECASE)
-        return stripped
+        if not text:
+            return ""
+        clean_text = text.strip()
+        if phrase:
+            pattern = re.compile(r"\s*\b" + re.escape(phrase) + r"\b\s*[,:]?", re.IGNORECASE)
+            clean_text = pattern.sub(" ", clean_text).strip()
+        # Also drop a leading invocation prefix if one remains (e.g. "hey", "ok", "hi", "yo").
+        clean_text = re.sub(r"^(hey|ok|yo|hi|hello)\s+", "", clean_text, flags=re.IGNORECASE).strip()
+        return clean_text
 
     # API used by AlwaysAliveController
     def is_wake_in_text(self, text: str) -> bool:

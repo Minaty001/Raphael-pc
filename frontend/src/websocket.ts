@@ -95,6 +95,12 @@ export class RaphaelWebSocketClient {
     }
   }
 
+  public sendVoiceInput(text: string, isFinal: boolean = true) {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: "voice.stt.input", text, is_final: isFinal }));
+    }
+  }
+
   public sendConfirmResponse(requestId: string, approved: boolean) {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ type: "security.confirm_response", request_id: requestId, approved }));

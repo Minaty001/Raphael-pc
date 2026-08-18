@@ -61,7 +61,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8765",
         "http://127.0.0.1:8765",
-        "http://localhost:5173",   # Vite dev server (optional)
+        "http://localhost:3000",   # Vite dev server (port 3000)
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",   # Vite dev server (port 5173)
         "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
@@ -148,6 +150,46 @@ async def set_llm_config(payload: Dict[str, Any] = Body(default={})):
 @app.get("/api/tools")
 async def list_available_tools():
     return get_tool_registry().list_tools()
+
+@app.get("/api/audio/devices")
+async def list_audio_devices():
+    """List all detected audio input devices and the auto-selected device.
+
+    Returns the device list with transport classification (bluetooth, usb,
+    builtin, virtual) and the device currently selected by the priority
+    cascade (Bluetooth > USB > Built-in).
+    """
+    from raphael.voice.device_selector import get_device_selector
+    from raphael.voice.microphone import get_microphone
+    selector = get_device_selector()
+    devices = selector.enumerate_input_devices()
+    selected = selector.select_best_device()
+    mic = get_microphone()
+    return {
+        "devices": [
+            {
+                "index": d.index,
+                "name": d.name,
+                "kind": d.kind,
+                "rate": d.rate,
+                "channels": d.max_input_channels,
+                "is_default": d.is_default,
+            }
+            for d in devices
+        ],
+        "selected": {
+            "index": selected.index,
+            "name": selected.name,
+            "kind": selected.kind,
+            "rate": selected.rate,
+        } if selected else None,
+        "active": {
+            "index": mic.current_device.index,
+            "name": mic.current_device.name,
+            "kind": mic.current_device.kind,
+        } if mic.current_device else None,
+        "available": selector.available,
+    }
 
 @app.get("/api/memories")
 async def get_memories():

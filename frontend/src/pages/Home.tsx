@@ -1,5 +1,5 @@
 import React from "react";
-import { RaphaelOrb } from "../components/brain/RaphaelOrb";
+import { CharacterStage } from "../components/character/CharacterStage";
 import { ChatMessage, RaphaelStateType, PageView, SystemMetrics } from "../types";
 import { Bot, User, Sparkles, ArrowRight, Cpu, Brain, Eye, Wrench, MessageSquare, Activity } from "lucide-react";
 
@@ -47,9 +47,9 @@ export const Home: React.FC<HomeProps> = ({ state, messages, metrics, onSendMess
   return (
     <div className="h-full overflow-y-auto hud-grid">
       <div className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left: Hero orb + status */}
+        {/* Left: Hero character + status */}
         <div className="lg:col-span-1 flex flex-col items-center justify-start gap-4 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-6 backdrop-blur-md">
-          <RaphaelOrb state={state} size={190} />
+          <CharacterStage className="w-full" />
           <h2 className="text-center font-display text-lg tracking-wide text-[var(--accent-primary)]">
             {STATE_HINT[state] ?? STATE_HINT.idle}
           </h2>

@@ -67,10 +67,42 @@ class VoicePipeline:
         logger.info(f"Final transcript: '{transcript}'")
 
         wwd = get_wake_word_detector()
-        # Low-power path: if not already in a command window, require wake word.
-        if wwd.is_wake_in_text(transcript) or self._asm.state == AudioState.COMMAND_LISTENING:
-            command = wwd.strip_wake(transcript) if wwd.is_wake_in_text(transcript) else transcript
-            await self._on_command(command)
+        has_wake = wwd.is_wake_in_text(transcript)
+        in_command_mode = self._asm.state == AudioState.COMMAND_LISTENING
+
+        # Check continuous conversation window from AlwaysAliveController
+        in_conv_window = False
+        try:
+            from raphael.runtime.always_alive import get_always_alive
+            in_conv_window = get_always_alive().in_conversation_window()
+        except Exception:
+            pass
+
+        if has_wake:
+            command = wwd.strip_wake(transcript)
+            if not command or not command.strip():
+                # User spoke only the wake phrase (e.g. "Raphael" / "Hey Raphael")
+                logger.info("Wake word detected without follow-up command. Entering COMMAND_LISTENING.")
+                self._asm.transition(AudioState.WAKE_DETECTED, "wake word detected")
+                self._asm.transition(AudioState.COMMAND_LISTENING, "listening for command after wake")
+                await get_state_manager().set_state(AssistantState.LISTENING)
+                await get_event_bus().publish("assistant.response", {"text": "Yes? I'm listening!"}, source="voice_pipeline")
+                try:
+                    await get_tts_provider().speak("Yes? I'm listening!")
+                except Exception:
+                    pass
+                return
+            # Wake word + actual command text
+            await self._on_command(command.strip())
+        elif in_command_mode or in_conv_window:
+            # Already in command-listening mode or inside open conversation window
+            if transcript and transcript.strip():
+                logger.info(f"Processing follow-up command (conv_window={in_conv_window}): '{transcript}'")
+                await self._on_command(transcript.strip())
+        else:
+            # In passive WAKE_LISTENING mode with no wake word — ignore
+            logger.debug(f"Passive listening: ignoring background speech (state={self._asm.state.value}): '{transcript[:50]}'")
+            return
 
     async def _on_command(self, command: str) -> None:
         """Run the command through the shared runner (wake -> reason -> speak)."""
