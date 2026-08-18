@@ -105,6 +105,8 @@ The UI is a **decoupled client**. Closing or minimizing it does **not** terminat
 process. Only an explicit **Exit Raphael** command or process shutdown terminates the service.
 
 For an in-depth technical specification, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For the **restructured build/study order** (dependency-first KO, not a flat module list), read
+[docs/ROADMAP.md](docs/ROADMAP.md).
 For the frontend, see [frontend/README.md](frontend/README.md).
 
 ---

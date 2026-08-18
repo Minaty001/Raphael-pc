@@ -14,6 +14,7 @@ proactive background tasks, and serving a decoupled React HUD frontend.
 - [Gateway API & Protocols](#-gateway-api--protocols)
 - [Security & Privacy Architecture](#-security--privacy-architecture)
 - [Status & Honest Gaps](#-status--honest-gaps)
+- [Restructured Build / Study Order](ROADMAP.md)
 
 ---
 
