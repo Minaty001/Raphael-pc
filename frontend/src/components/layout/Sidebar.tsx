@@ -15,7 +15,7 @@ import {
   Terminal,
   Settings,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -25,61 +25,67 @@ interface SidebarProps {
   onToggleCollapse: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
-  currentPage,
-  onNavigate,
-  collapsed,
-  onToggleCollapse
-}) => {
-  const navItems: { id: PageView; label: string; icon: React.ReactNode }[] = [
-    { id: "home", label: "HOME", icon: <Home className="w-4 h-4" /> },
-    { id: "chat", label: "CHAT", icon: <MessageSquare className="w-4 h-4" /> },
-    { id: "memory", label: "MEMORY", icon: <Brain className="w-4 h-4" /> },
-    { id: "vision", label: "VISION", icon: <Eye className="w-4 h-4" /> },
-    { id: "goals", label: "GOALS", icon: <Target className="w-4 h-4" /> },
-    { id: "routines", label: "ROUTINES", icon: <Repeat className="w-4 h-4" /> },
-    { id: "reminders", label: "REMINDERS", icon: <Bell className="w-4 h-4" /> },
-    { id: "activity", label: "ACTIVITY", icon: <Activity className="w-4 h-4" /> },
-    { id: "models", label: "MODELS", icon: <Cpu className="w-4 h-4" /> },
-    { id: "tools", label: "TOOLS", icon: <Wrench className="w-4 h-4" /> },
-    { id: "system", label: "SYSTEM", icon: <Server className="w-4 h-4" /> },
-    { id: "developer", label: "DEVELOPER", icon: <Terminal className="w-4 h-4" /> },
-    { id: "settings", label: "SETTINGS", icon: <Settings className="w-4 h-4" /> }
-  ];
+type NavItem = { id: PageView; label: string; icon: React.ReactNode; group: string };
 
+const navItems: NavItem[] = [
+  { id: "home", label: "Home", icon: <Home className="w-4 h-4" />, group: "Core" },
+  { id: "chat", label: "Chat", icon: <MessageSquare className="w-4 h-4" />, group: "Core" },
+  { id: "memory", label: "Memory", icon: <Brain className="w-4 h-4" />, group: "Core" },
+  { id: "vision", label: "Vision", icon: <Eye className="w-4 h-4" />, group: "Awareness" },
+  { id: "goals", label: "Goals", icon: <Target className="w-4 h-4" />, group: "Awareness" },
+  { id: "routines", label: "Routines", icon: <Repeat className="w-4 h-4" />, group: "Awareness" },
+  { id: "reminders", label: "Reminders", icon: <Bell className="w-4 h-4" />, group: "Awareness" },
+  { id: "activity", label: "Activity", icon: <Activity className="w-4 h-4" />, group: "System" },
+  { id: "models", label: "Models", icon: <Cpu className="w-4 h-4" />, group: "System" },
+  { id: "tools", label: "Tools", icon: <Wrench className="w-4 h-4" />, group: "System" },
+  { id: "system", label: "System", icon: <Server className="w-4 h-4" />, group: "System" },
+  { id: "developer", label: "Developer", icon: <Terminal className="w-4 h-4" />, group: "System" },
+  { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" />, group: "System" },
+];
+
+const groupOrder = ["Core", "Awareness", "System"];
+
+export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, collapsed, onToggleCollapse }) => {
   return (
     <aside
-      className={`border-r border-[var(--border)] bg-[#070c14]/95 backdrop-blur flex flex-col transition-all duration-300 shrink-0 z-30 select-none ${
-        collapsed ? "w-14" : "w-52"
+      className={`shrink-0 z-30 flex flex-col border-r border-[var(--border)] bg-[#070c14]/95 backdrop-blur transition-all duration-300 ${
+        collapsed ? "w-16" : "w-56"
       }`}
     >
-      {/* Navigation Items */}
-      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-        {navItems.map((item) => {
-          const isActive = currentPage === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-md font-mono text-xs transition-all ${
-                isActive
-                  ? "bg-[var(--accent-primary)]/15 border border-[var(--accent-primary)]/50 text-[var(--accent-primary)] font-bold shadow-[0_0_10px_var(--glow)]"
-                  : "text-[var(--text-secondary)] hover:text-white hover:bg-[var(--bg-secondary)]"
-              }`}
-              title={item.label}
-            >
-              <div className="shrink-0">{item.icon}</div>
-              {!collapsed && <span className="truncate tracking-wider">{item.label}</span>}
-            </button>
-          );
-        })}
+      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-3">
+        {groupOrder.map((group) => (
+          <div key={group} className="space-y-1">
+            {!collapsed && (
+              <div className="px-2.5 pb-1 text-[9px] font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                {group}
+              </div>
+            )}
+            {navItems
+              .filter((i) => i.group === group)
+              .map((item) => {
+                const isActive = currentPage === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    title={collapsed ? item.label : undefined}
+                    className={`nav-item ${isActive ? "nav-item-active" : "nav-item-idle"} ${
+                      collapsed ? "justify-center" : ""
+                    }`}
+                  >
+                    <div className="shrink-0">{item.icon}</div>
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                  </button>
+                );
+              })}
+          </div>
+        ))}
       </div>
 
-      {/* Collapse Toggle Button */}
       <div className="p-2 border-t border-[var(--border)] shrink-0">
         <button
           onClick={onToggleCollapse}
-          className="w-full flex items-center justify-center p-2 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-white transition-colors"
+          className="btn-ghost w-full flex items-center justify-center p-2"
           title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

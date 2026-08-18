@@ -106,3 +106,80 @@ export interface WSEvent {
   timestamp?: number;
   [key: string]: any;
 }
+
+// ---------------------------------------------------------------------------
+// Always-Alive Runtime types (Sections 36, 66-71)
+// ---------------------------------------------------------------------------
+
+export type AudioStateType =
+  | "AUDIO_IDLE"
+  | "WAKE_LISTENING"
+  | "WAKE_DETECTED"
+  | "COMMAND_LISTENING"
+  | "PROCESSING"
+  | "SPEAKING"
+  | "INTERRUPTED"
+  | "PAUSED"
+  | "ERROR";
+
+export type RuntimeModeType = "NORMAL" | "FOCUS" | "PAUSE" | "SLEEP" | "EXIT";
+
+export type TaskStatusType =
+  | "CREATED"
+  | "QUEUED"
+  | "RUNNING"
+  | "PAUSED"
+  | "WAITING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED";
+
+export type TaskPriorityType =
+  | "CRITICAL"
+  | "HIGH"
+  | "NORMAL"
+  | "LOW"
+  | "BACKGROUND"
+  | "IDLE";
+
+export interface BackgroundTask {
+  id: string;
+  name: string;
+  type: string;
+  status: TaskStatusType;
+  priority: TaskPriorityType;
+  progress: number;
+  created_at?: number;
+  started_at?: number;
+  finished_at?: number;
+  error?: string | null;
+  max_cpu?: number;
+  max_memory_mb?: number;
+  dependencies?: string[];
+  [key: string]: any;
+}
+
+export interface RuntimeHealthComponent {
+  status: string;
+  detail?: string;
+  stale_seconds?: number;
+}
+
+export interface RuntimeHealth {
+  runtime: string;
+  uptime_seconds: number;
+  components: Record<string, RuntimeHealthComponent>;
+  timestamp: number;
+}
+
+export interface RuntimeHeartbeat {
+  type: "runtime.heartbeat";
+  uptime: number;
+  mode: RuntimeModeType;
+  workers: number;
+  tasks: number;
+  voice: string;
+  runtime: string;
+  components?: Record<string, RuntimeHealthComponent>;
+  timestamp?: number;
+}

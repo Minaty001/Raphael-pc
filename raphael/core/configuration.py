@@ -84,6 +84,39 @@ class ProactiveConfig:
     autonomy_level: int = 2  # Level 0 (Chat) to Level 5 (High Autonomy)
 
 @dataclass
+class RuntimeConfig:
+    """Always-Alive runtime behavior (Sections 1-4, 49-53, 73)."""
+    background_mode_enabled: bool = True
+    keep_alive_on_window_close: bool = True
+    keep_wake_listener_active: bool = True
+    continue_background_tasks: bool = True
+    continue_reminders: bool = True
+    continue_memory_maintenance: bool = True
+    startup_mode: str = "MINIMIZED"  # OFF, ON, MINIMIZED
+    heartbeat_interval_seconds: int = 5
+    # Focus / Sleep / Pause defaults
+    default_mode: str = "NORMAL"  # NORMAL | FOCUS | PAUSE | SLEEP
+
+@dataclass
+class BackgroundConfig:
+    """Background Task Engine tuning (Sections 21-22, 48)."""
+    pool_size_override: int = 0  # 0 = auto from resource mode
+    enable_checkpointing: bool = True
+    enable_persistence: bool = True
+    # Resource policy thresholds (Section 48)
+    ram_pause_noncritical_pct: int = 90
+    ram_reduce_workers_pct: int = 80
+    cpu_throttle_pct: int = 85
+
+@dataclass
+class WakeWordConfig:
+    """Wake-word + voice background behavior (Sections 11-16, 34-35)."""
+    rolling_buffer_seconds: float = 1.0  # Section 13
+    conversational_window_seconds: int = 8  # Section 15
+    strip_wake_phrase: bool = True  # Section 14
+    privacy_indicators: bool = True  # Section 35
+
+@dataclass
 class LearningConfig:
     enabled: bool = True
     adaptive: bool = True
@@ -120,6 +153,9 @@ class RaphaelConfig:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     screen: ScreenConfig = field(default_factory=ScreenConfig)
     proactive: ProactiveConfig = field(default_factory=ProactiveConfig)
+    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    background: BackgroundConfig = field(default_factory=BackgroundConfig)
+    wakeword: WakeWordConfig = field(default_factory=WakeWordConfig)
     learning: LearningConfig = field(default_factory=LearningConfig)
     curiosity: CuriosityConfig = field(default_factory=CuriosityConfig)
     websocket: WebSocketConfig = field(default_factory=WebSocketConfig)

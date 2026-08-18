@@ -30,6 +30,9 @@ from raphael.memory.user_model import get_user_model
 from raphael.brain.goals import get_goal_engine
 from raphael.brain.open_loops import get_open_loop_tracker
 from raphael.learning.reflection_engine import get_reflection_engine
+from raphael.runtime.always_alive import get_always_alive, RuntimeMode
+from raphael.runtime.health_monitor import get_health_monitor
+from raphael.runtime.tasks import get_task_manager, TaskPriority, TaskType
 
 logger = get_logger("network.api")
 
@@ -150,7 +153,76 @@ async def send_chat_message(payload: Dict[str, Any] = Body(...)):
     res = await reasoning.process_user_input(text)
     return res
 
-@app.websocket("/ws")
+# ---------------------------------------------------------------------------
+# Always-Alive Runtime API (Sections 65-71)
+# ---------------------------------------------------------------------------
+@app.get("/api/runtime/health")
+async def runtime_health():
+    monitor = get_health_monitor()
+    return await monitor.snapshot()
+
+@app.get("/api/runtime/mode")
+async def runtime_mode():
+    return {"mode": get_always_alive().get_mode()}
+
+@app.post("/api/runtime/mode")
+async def set_runtime_mode(payload: Dict[str, Any] = Body(...)):
+    mode = payload.get("mode", "NORMAL").upper()
+    if mode not in [m.value for m in RuntimeMode]:
+        raise HTTPException(status_code=400, detail="Invalid mode")
+    await get_always_alive().set_mode(RuntimeMode(mode))
+    return {"mode": mode}
+
+@app.post("/api/runtime/interrupt")
+async def runtime_interrupt():
+    await get_always_alive().interrupt()
+    return {"interrupted": True}
+
+@app.get("/api/tasks")
+async def list_tasks():
+    return get_task_manager().list()
+
+@app.post("/api/tasks")
+async def create_task(payload: Dict[str, Any] = Body(...)):
+    """Create a background task. A coroutine name is resolved from registered
+    task factories; for the API we accept a named builtin task."""
+    name = payload.get("name", "Untitled task")
+    priority = payload.get("priority", TaskPriority.NORMAL.value)
+    task_type = payload.get("type", TaskType.BACKGROUND.value)
+    tid = get_task_manager().create(
+        name=name,
+        coroutine=_noop_task,
+        priority=priority,
+        type=task_type,
+        max_cpu=payload.get("max_cpu", 25),
+        max_memory_mb=payload.get("max_memory_mb", 300),
+        estimated_duration_s=payload.get("estimated_duration_s", 0),
+    )
+    return {"id": tid, "name": name}
+
+@app.post("/api/tasks/{task_id}/pause")
+async def pause_task(task_id: str):
+    ok = get_task_manager().pause(task_id)
+    return {"ok": ok}
+
+@app.post("/api/tasks/{task_id}/resume")
+async def resume_task(task_id: str):
+    ok = get_task_manager().resume(task_id)
+    return {"ok": ok}
+
+@app.post("/api/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str):
+    ok = get_task_manager().cancel(task_id)
+    return {"ok": ok}
+
+@app.post("/api/tasks/{task_id}/retry")
+async def retry_task(task_id: str):
+    ok = get_task_manager().retry(task_id)
+    return {"ok": ok}
+
+async def _noop_task(**kwargs):
+    """Default placeholder coroutine for API-created tasks (demo/integration)."""
+    await asyncio.sleep(2.0)
 async def websocket_endpoint(websocket: WebSocket):
     ws_mgr = get_ws_manager()
     await ws_mgr.connect(websocket)

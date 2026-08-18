@@ -24,15 +24,34 @@ logger = get_logger("cli")
 def run_server():
     import uvicorn
     from raphael.core.runtime import get_runtime
-    
+
     config = get_config()
     host = config.websocket.host
     port = config.websocket.port
 
     logger.info(f"Starting Raphael Server on http://{host}:{port}")
-    
-    # Initialize runtime asynchronously on startup loop
-    asyncio.run(get_runtime().start())
+
+    # The runtime runs an infinite perception loop, so we boot it in a dedicated
+    # daemon thread with its own event loop. This cleanly separates the persistent
+    # "Raphael runtime" from the WebSocket UI gateway (uvicorn) per Sections 3-4:
+    # the runtime is the assistant; the UI is only a client. Closing the UI never
+    # terminates the runtime.
+    runtime = get_runtime()
+
+    def _boot_in_loop():
+        import asyncio as _asyncio
+        loop = _asyncio.new_event_loop()
+
+        async def _runner():
+            try:
+                await runtime.start()
+            except Exception as e:
+                logger.error(f"Runtime boot failed: {e}", exc_info=True)
+
+        loop.run_until_complete(_runner())
+
+    boot_thread = threading.Thread(target=_boot_in_loop, name="raphael-runtime", daemon=True)
+    boot_thread.start()
 
     uvicorn.run("raphael.network.api:app", host=host, port=port, log_level="info", reload=False)
 

@@ -1,4 +1,12 @@
-import { WSEvent, AssistantState, SystemMetrics } from "./types";
+import {
+  WSEvent,
+  SystemMetrics,
+  RuntimeHeartbeat,
+  RuntimeHealth,
+  BackgroundTask,
+  AudioStateType,
+  RuntimeModeType,
+} from "./types";
 
 type Listener = (event: WSEvent) => void;
 
@@ -115,6 +123,41 @@ export class RaphaelWebSocketClient {
         setTimeout(() => this.emit({ type: "assistant.state", state: "IDLE", timestamp: Date.now() / 1000 }), 1500);
       }
     }, 600);
+  }
+
+  // ---- REST helpers for the Always-Alive Runtime (Sections 65-71) --------
+  private async rest<T = any>(path: string, method: string = "GET", body?: any): Promise<T | null> {
+    try {
+      const res = await fetch(`http://localhost:8765${path}`, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  public async fetchRuntimeHealth(): Promise<RuntimeHealth | null> {
+    return this.rest<RuntimeHealth>("/api/runtime/health");
+  }
+
+  public async fetchTasks(): Promise<BackgroundTask[]> {
+    return (await this.rest<BackgroundTask[]>("/api/tasks")) ?? [];
+  }
+
+  public async setRuntimeMode(mode: RuntimeModeType): Promise<boolean> {
+    return !!(await this.rest("/api/runtime/mode", "POST", { mode }));
+  }
+
+  public async taskAction(id: string, action: "pause" | "resume" | "cancel" | "retry"): Promise<boolean> {
+    return !!(await this.rest(`/api/tasks/${id}/${action}`, "POST"));
+  }
+
+  public async interrupt(): Promise<boolean> {
+    return !!(await this.rest("/api/runtime/interrupt", "POST"));
   }
 }
 

@@ -1,4 +1,8 @@
-@import './styles/tokens.css';
+@import "./styles/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 * {
   box-sizing: border-box;
@@ -6,77 +10,150 @@
   padding: 0;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   background-color: var(--bg-primary);
-  background-image: 
+  background-image:
     radial-gradient(circle at 50% 20%, rgba(86, 217, 255, 0.06) 0%, transparent 50%),
     radial-gradient(circle at 80% 80%, rgba(111, 140, 255, 0.04) 0%, transparent 40%);
   color: var(--text-primary);
   font-family: var(--font-primary);
   font-size: 14px;
   line-height: 1.5;
-  min-height: 100vh;
   overflow: hidden;
-  user-select: none;
 }
 
-.font-mono {
-  font-family: var(--font-mono);
-}
+/* HUD card — shared surface used across panels */
+@layer components {
+  .hud-card {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    transition: border-color var(--transition-normal);
+  }
+  .hud-card:hover {
+    border-color: rgba(86, 217, 255, 0.3);
+  }
 
-/* Glassmorphism Panel */
-.glass-panel {
-  background: var(--panel);
-  backdrop-filter: blur(14px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
-  transition: border-color var(--transition-normal);
-}
+  .hud-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-display);
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--accent-primary);
+  }
 
-.glass-panel:hover {
-  border-color: rgba(86, 217, 255, 0.3);
+  .nav-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    transition: all var(--transition-normal);
+  }
+  .nav-item-active {
+    background: rgba(86, 217, 255, 0.15);
+    border: 1px solid rgba(86, 217, 255, 0.5);
+    color: var(--accent-primary);
+    font-weight: 700;
+    box-shadow: 0 0 10px var(--glow);
+  }
+  .nav-item-idle {
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+  }
+  .nav-item-idle:hover {
+    color: #fff;
+    background: var(--bg-secondary);
+  }
+
+  .btn-ghost {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    transition: color var(--transition-normal), background var(--transition-normal);
+  }
+  .btn-ghost:hover {
+    color: #fff;
+    background: rgba(10, 16, 24, 0.8);
+  }
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
-
 ::-webkit-scrollbar-track {
   background: rgba(5, 8, 13, 0.7);
 }
-
 ::-webkit-scrollbar-thumb {
   background: rgba(86, 217, 255, 0.2);
   border-radius: 3px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(86, 217, 255, 0.5);
 }
 
-/* Breathing Animation for Orb */
+/* State-based orb animations */
 @keyframes orb-breathe {
-  0% { transform: scale(0.96); opacity: 0.85; filter: drop-shadow(0 0 12px var(--glow)); }
-  50% { transform: scale(1.04); opacity: 1; filter: drop-shadow(0 0 24px var(--accent-primary)); }
-  100% { transform: scale(0.96); opacity: 0.85; filter: drop-shadow(0 0 12px var(--glow)); }
+  0% {
+    transform: scale(0.96);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 12px var(--glow));
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+    filter: drop-shadow(0 0 24px var(--accent-primary));
+  }
+  100% {
+    transform: scale(0.96);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 12px var(--glow));
+  }
 }
-
 @keyframes orb-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
-
 .orb-breathe {
   animation: orb-breathe 4s ease-in-out infinite;
 }
-
 .orb-spin {
   animation: orb-spin 12s linear infinite;
 }
-
 .orb-spin-fast {
   animation: orb-spin 3s linear infinite;
+}
+
+/* Subtle grid texture for the desktop HUD backdrop */
+.hud-grid {
+  background-image:
+    linear-gradient(rgba(86, 217, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(86, 217, 255, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
 }

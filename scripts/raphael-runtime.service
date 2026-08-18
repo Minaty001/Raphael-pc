@@ -1,0 +1,17 @@
+[Unit]
+Description=Raphael v3 Always-Alive Assistant Runtime
+After=network.target
+
+[Service]
+Type=simple
+# Run as the user (no root required for normal operation - Section 6).
+WorkingDirectory=%h/Raphael-pc
+ExecStart=%h/Raphael-pc/venv/bin/python %h/Raphael-pc/raphael/runtime_launcher.py
+Restart=on-failure
+RestartSec=3
+# The runtime keeps its own state; do not kill workers abruptly.
+TimeoutStopSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

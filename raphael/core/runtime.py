@@ -12,6 +12,7 @@ from raphael.core.event_bus import get_event_bus
 from raphael.core.state_manager import get_state_manager, AssistantState
 from raphael.core.resource_manager import get_resource_manager
 from raphael.core.scheduler import get_scheduler
+from raphael.runtime.always_alive import get_always_alive
 from raphael.platform.factory import get_platform_adapter
 from raphael.tools.registry import get_tool_registry
 from raphael.brain.cognitive_runtime import get_cognitive_runtime
@@ -58,6 +59,12 @@ class RaphaelRuntime:
         # Phase 5: Cognitive Brain Subsystems Initialization
         cog = get_cognitive_runtime()
         logger.info("PHASE 5: Cognitive Brain & Memory initialized")
+
+        # Phase 5b: Always-Alive Runtime (Sections 1-4) — boots wake listener,
+        # background task engine, health monitor, watchdog, heartbeat.
+        always = get_always_alive()
+        await always.start()
+        logger.info("PHASE 5b: Always-Alive Runtime initialized")
 
         # Phase 6: Periodic Perception Background Loop
         self._running = True

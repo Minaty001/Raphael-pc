@@ -18,8 +18,9 @@
   --border: rgba(120, 190, 220, 0.16);
   --glow: rgba(86, 217, 255, 0.25);
 
-  --font-primary: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-primary: "Rajdhani", "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Orbitron", "Rajdhani", sans-serif;
+  --font-mono: "Share Tech Mono", "JetBrains Mono", monospace;
 
   --radius-sm: 8px;
   --radius-md: 14px;

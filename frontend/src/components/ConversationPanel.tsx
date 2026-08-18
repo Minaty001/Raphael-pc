@@ -82,7 +82,7 @@ export const ConversationPanel: React.FC<Props> = ({
                     : "bg-slate-900/80 border border-slate-800 text-slate-200 rounded-tl-none"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{msg.text}</p>
+                <p className="whitespace-pre-wrap select-text">{msg.text}</p>
 
                 {msg.toolResult && (
                   <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] space-y-1">
