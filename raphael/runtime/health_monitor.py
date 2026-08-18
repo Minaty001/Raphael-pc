@@ -63,13 +63,16 @@ class RuntimeHealthMonitor:
             except Exception as e:
                 return {"status": "error", "detail": f"memory db: {e}"}
 
-        # WebSocket probe: any clients connected?
+        # WebSocket probe: report real client connectivity (P0 #29).
+        # "connected" only when >=1 client is attached; otherwise "listening"
+        # (server is up but no UI connected yet) — never a false "connected".
         async def _probe_websocket() -> Dict[str, Any]:
             try:
                 from raphael.network.websocket import get_ws_manager
                 n = len(get_ws_manager().active_connections)
-                return {"status": "connected" if n >= 0 else "error",
-                        "detail": f"{n} client(s)"}
+                if n > 0:
+                    return {"status": "connected", "detail": f"{n} client(s) connected"}
+                return {"status": "listening", "detail": "gateway up, no client connected"}
             except Exception as e:
                 return {"status": "error", "detail": f"ws: {e}"}
 
@@ -131,7 +134,8 @@ class RuntimeHealthMonitor:
 
     def is_healthy(self) -> bool:
         return all(
-            info["status"] in ("ok", "ready", "alive", "running", "available", "healthy", "connected")
+            info["status"] in ("ok", "ready", "alive", "running", "available",
+                               "healthy", "connected", "listening")
             for info in self._components.values()
         )
 

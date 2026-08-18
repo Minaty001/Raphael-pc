@@ -16,5 +16,10 @@ def verify_token(token: str, client_ip: str) -> bool:
     if token == config.websocket.api_token:
         return True
 
-    logger.warning(f"Auth failed for client IP {client_ip} with token '{token}'")
+    # SECURITY: never log the token itself. Log only metadata.
+    token_present = bool(token)
+    logger.warning(
+        f"Auth failed for client IP {client_ip} "
+        f"(token_present={token_present})"
+    )
     return False

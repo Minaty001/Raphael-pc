@@ -36,6 +36,53 @@ from raphael.voice.device_selector import (
     get_device_selector,
 )
 
+
+# Target rate for all downstream consumers (KWS / VAD / STT). Hardware may
+# capture at a different native rate (e.g. 44100Hz); we always normalize.
+TARGET_RATE = 16000
+
+
+class Resampler:
+    """Linear-interpolation resampler for mono 16-bit PCM.
+
+    Normalizes arbitrary hardware sample rates down to TARGET_RATE (16kHz) so
+    Porcupine / Vosk / VAD see a consistent stream regardless of what the
+    microphone device natively reports (many mics default to 44100Hz).
+    Stateful across chunks so boundaries don't cause clicks/pops.
+    """
+
+    def __init__(self, in_rate: int, out_rate: int = TARGET_RATE):
+        self.in_rate = in_rate
+        self.out_rate = out_rate
+        self._last_in = 0.0
+        self._pos = 0.0
+
+    def resample(self, pcm: bytes) -> bytes:
+        if self.in_rate == self.out_rate:
+            return pcm
+        import struct
+        in_samples = struct.unpack("<%dh" % (len(pcm) // 2), pcm)
+        if not in_samples:
+            return b""
+        ratio = self.out_rate / self.in_rate
+        out = []
+        pos = self._pos
+        prev = self._last_in
+        while True:
+            i = int(pos)
+            if i >= len(in_samples):
+                break
+            cur = in_samples[i]
+            frac = pos - i
+            val = prev + (cur - prev) * frac
+            out.append(int(round(val)))
+            prev = cur
+            pos += 1.0 / ratio
+        self._pos = pos - len(in_samples)
+        self._last_in = in_samples[-1]
+        return struct.pack("<%dh" % len(out), *out)
+
+
 logger = get_logger("voice.microphone")
 
 
@@ -58,6 +105,16 @@ class MicrophoneSource:
         self._sd = None
         self._available = self._probe()
         self._asm = get_audio_state_machine()
+
+        # Capture the main asyncio event loop at construction time so the
+        # sounddevice callback (which runs on a worker thread) can dispatch to
+        # it safely via call_soon_threadsafe. The callback thread has NO
+        # asyncio context, so it cannot call asyncio.get_event_loop() itself
+        # (would raise RuntimeError), nor assume any loop is running.
+        try:
+            self._loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self._loop = None
 
         # Device auto-selection state
         self._selector = get_device_selector()
@@ -221,26 +278,33 @@ class MicrophoneSource:
         """Pull PCM frames on a worker thread; dispatch to wake/STT on the loop."""
         try:
             sd = self._sd
+            loop = self._loop
 
             def _callback(indata, frames, time_info, status):
                 if not self._running:
                     return
                 pcm = bytes(indata)
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    return
-                if not loop.is_running():
-                    return
-                loop.call_soon_threadsafe(self._dispatch, pcm)
+                # Dispatch to the main asyncio loop. The callback runs on a
+                # sounddevice worker thread with no asyncio context, so we must
+                # use the loop captured at construction time + call_soon_threadsafe.
+                if loop is not None and loop.is_running():
+                    loop.call_soon_threadsafe(self._dispatch, pcm)
+                else:
+                    # Fallback: loop not available (e.g. headless/import-time) —
+                    # skip dispatch rather than crash the capture thread.
+                    pass
 
             # Resolve device + sample rate with automatic fallback
             stream_params = self._resolve_stream_params()
             device_name = self._current_device.name if self._current_device else "system default"
-            effective_rate = stream_params.get("samplerate", self.sample_rate)
+            effective_rate = int(stream_params.get("samplerate", self.sample_rate))
+            # Build a resampler so downstream consumers (KWS/VAD/STT) always get
+            # TARGET_RATE (16kHz) mono PCM, even if the device captures at a
+            # different native rate (e.g. 44100Hz). P0: sample-rate bug.
+            self._resampler = Resampler(in_rate=effective_rate, out_rate=TARGET_RATE)
             logger.info(
                 f"Opening audio stream on '{device_name}' "
-                f"(device={stream_params.get('device')}, rate={effective_rate}Hz)"
+                f"(device={stream_params.get('device')}, rate={effective_rate}Hz -> {TARGET_RATE}Hz)"
             )
 
             stream = sd.RawInputStream(**stream_params, callback=_callback)
@@ -253,9 +317,19 @@ class MicrophoneSource:
             self._running = False
 
     def _dispatch(self, pcm: bytes) -> None:
-        """Route a captured PCM frame to the right consumer (FIX 4/5/6)."""
+        """Route a captured PCM frame to the right consumer (FIX 4/5/6).
+
+        The raw chunk is normalized to 16kHz mono via the stream's resampler
+        before being handed to KWS / VAD / STT so all consumers agree on the
+        sample rate.
+        """
         from raphael.voice.wakeword import get_wake_word_detector
         from raphael.voice.stt import get_stt_provider
+
+        # Normalize sample rate -> TARGET_RATE for all downstream consumers.
+        resampler = getattr(self, "_resampler", None)
+        if resampler is not None:
+            pcm = resampler.resample(pcm)
 
         wwd = get_wake_word_detector()
         # Always feed the ring buffer / KWS so a wake is detected (FIX 5).

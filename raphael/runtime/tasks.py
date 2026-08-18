@@ -439,7 +439,24 @@ class TaskManager:
             if not task or task.status == TaskStatus.CANCELLED.value:
                 self._queue.task_done()
                 continue
-            await self._maybe_wait_dependencies(task)
+
+            # Dependency check must NOT block the scheduler (P0 #11). If a
+            # dependency is still pending, move this task to WAITING and
+            # re-enqueue it with a small delay so other ready tasks keep
+            # progressing. The scheduler immediately moves on to the next task.
+            dep_blocked, blocking_dep = self._check_dependencies(task)
+            if dep_blocked:
+                task.status = TaskStatus.WAITING.value
+                self.store.upsert(task)
+                self._emit("task.waiting", task)
+                # Re-enqueue for a later pass; the dependency's completion
+                # handler (see _on_dependency_completed) re-wakes it sooner.
+                await asyncio.sleep(0)
+                self._queue.put_nowait((_PRIORITY_RANK.get(TaskPriority(task.priority), 3),
+                                        time.time() + 1.0, tid))
+                self._queue.task_done()
+                continue
+
             # Resource-aware gating (Section 27/28/48)
             if self._should_throttle(task):
                 self._queue.put_nowait((_PRIORITY_RANK.get(TaskPriority(task.priority), 3),
@@ -452,29 +469,47 @@ class TaskManager:
             task.started_at = time.time()
             self.store.upsert(task)
             self._emit("task.started", task)
-            # Bound concurrency (Section 22).
+            # Bound concurrency (Section 22). Each dequeued task spawns exactly
+            # one worker wrapper; the semaphore caps simultaneous execution.
             self._running[tid] = asyncio.create_task(self._run_task(task))
             self._queue.task_done()
 
-    async def _maybe_wait_dependencies(self, task: BackgroundTask):
-        if not task.dependencies:
-            return
+    def _check_dependencies(self, task: BackgroundTask) -> tuple:
+        """Non-blocking dependency check. Returns (blocked, blocking_dep_id).
+
+        Unlike the old blocking implementation, this never awaits — it only
+        inspects current dependency states so the scheduler stays responsive.
+        """
         for dep in task.dependencies:
             dep_task = self._tasks.get(dep)
-            if dep_task and dep_task.status not in (TaskStatus.COMPLETED.value,):
-                task.status = TaskStatus.WAITING.value
-                self.store.upsert(task)
-                self._emit("task.waiting", task)
-                while self._running_flag:
-                    if dep_task.status == TaskStatus.COMPLETED.value:
-                        break
-                    if dep_task.status in (TaskStatus.FAILED.value, TaskStatus.CANCELLED.value):
-                        task.status = TaskStatus.FAILED.value
-                        task.error = f"Dependency {dep} did not complete"
-                        self.store.upsert(task)
-                        self._emit("task.failed", task)
-                        return
-                    await asyncio.sleep(0.5)
+            if dep_task is None:
+                # Unknown dependency: treat as already satisfied (don't deadlock).
+                continue
+            if dep_task.status not in (
+                TaskStatus.COMPLETED.value,
+                TaskStatus.CANCELLED.value,
+            ):
+                return (True, dep)
+        return (False, None)
+
+    def _wake_dependents(self, completed_task_id: str) -> None:
+        """Re-enqueue any WAITING tasks that depend on a now-finished task.
+
+        Called when a task completes/cancels so dependents don't have to wait
+        for the 1s scheduler poll to be re-evaluated (P0 #11).
+        """
+        for t in self._tasks.values():
+            if t.status != TaskStatus.WAITING.value:
+                continue
+            if completed_task_id in t.dependencies:
+                # Re-queue immediately with WAITING cleared; the scheduler will
+                # re-evaluate dependencies (and may WAIT again if other deps pending).
+                t.status = TaskStatus.QUEUED.value
+                self.store.upsert(t)
+                self._queue.put_nowait(
+                    (_PRIORITY_RANK.get(TaskPriority(t.priority), 3), time.time(), t.id)
+                )
+                logger.debug(f"Woke dependent task {t.name} ({t.id}) after {completed_task_id}")
 
     def _should_throttle(self, task: BackgroundTask) -> bool:
         # Delegate to the authoritative ResourceManager policy (Section 27/48).
@@ -497,6 +532,8 @@ class TaskManager:
                 self.store.upsert(task)
                 self._emit("task.completed", task)
                 self._notify_completion(task)
+                # P0 #11: a completed task may unblock WAITING dependents.
+                self._wake_dependents(task.id)
             except asyncio.CancelledError:
                 # Real pause/cancel requested via pause()/cancel() already set
                 # the authoritative status; keep it. Remove from the running map.

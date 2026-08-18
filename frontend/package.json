@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "node typecheck.mjs",
+    "check": "npm run typecheck && npm run build"
   },
   "dependencies": {
     "lucide-react": "^0.294.0",

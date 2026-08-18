@@ -28,12 +28,14 @@ from raphael.memory.long_term import get_long_term_memory
 from raphael.memory.working_memory import get_working_memory
 from raphael.memory.memory_manager import get_memory_manager
 from raphael.memory.user_model import get_user_model
+from raphael.core.event_bus import get_event_bus
 from raphael.brain.goals import get_goal_engine
 from raphael.brain.open_loops import get_open_loop_tracker
 from raphael.learning.reflection_engine import get_reflection_engine
 from raphael.runtime.always_alive import get_always_alive, RuntimeMode
 from raphael.runtime.health_monitor import get_health_monitor
 from raphael.runtime.tasks import get_task_manager, TaskPriority, TaskType
+from raphael.network.auth import verify_token
 
 logger = get_logger("network.api")
 
@@ -276,14 +278,21 @@ async def list_tasks():
 
 @app.post("/api/tasks")
 async def create_task(payload: Dict[str, Any] = Body(...)):
-    """Create a background task. A coroutine name is resolved from registered
-    task factories; for the API we accept a named builtin task."""
+    """Create a background task.
+
+    If the payload carries a `tool` name (one of the registered Tool Registry
+    tools), the task actually executes that tool in the background via the
+    real executor — not a placeholder. Otherwise it runs a genuine lightweight
+    background job (a scheduled notification/reminder) so the task UI reflects
+    real work rather than a no-op sleep.
+    """
     name = payload.get("name", "Untitled task")
     priority = payload.get("priority", TaskPriority.NORMAL.value)
     task_type = payload.get("type", TaskType.BACKGROUND.value)
+    coroutine = _resolve_api_task_coroutine(payload, name, priority)
     tid = get_task_manager().create(
         name=name,
-        coroutine=_noop_task,
+        coroutine=coroutine,
         priority=priority,
         type=task_type,
         max_cpu=payload.get("max_cpu", 25),
@@ -291,6 +300,44 @@ async def create_task(payload: Dict[str, Any] = Body(...)):
         estimated_duration_s=payload.get("estimated_duration_s", 0),
     )
     return {"id": tid, "name": name}
+
+def _resolve_api_task_coroutine(payload: Dict[str, Any], name: str, priority: str):
+    """Pick a real coroutine for an API-created task (P0 #12).
+
+    Previously all API tasks ran `_noop_task` (just `await asyncio.sleep(2)`),
+    so the Task UI never reflected actual work. Now:
+      * `tool` present -> execute that registry tool in the background.
+      * otherwise -> a genuine reminder/notification background job.
+    """
+    tool_name = payload.get("tool")
+    tool_args = payload.get("args") or {}
+    if tool_name:
+        async def _run_tool_task(**_kwargs):
+            from raphael.tools.registry import get_tool_registry
+            reg = get_tool_registry()
+            tool = reg.get_tool(tool_name)
+            if tool is None:
+                raise ValueError(f"Unknown tool '{tool_name}'")
+            mgr = get_task_manager()
+            task = _kwargs.get("_task")
+            result = await tool.execute(user_request=str(tool_args), task_context=task)
+            if task is not None:
+                task.result = {"tool": tool_name, "output": str(result)[:500]}
+                mgr.checkpoint(task.id, task.checkpoint)
+        return _run_tool_task
+
+    async def _run_reminder_task(**_kwargs):
+        """Real background job: emit a notification after the requested delay."""
+        delay = float(payload.get("delay_s", 0) or 0)
+        if delay > 0:
+            await asyncio.sleep(delay)
+        msg = payload.get("message", name)
+        await get_event_bus().publish(
+            "notification.created",
+            {"title": "Background reminder", "message": msg, "priority": priority},
+            source="task_engine",
+        )
+    return _run_reminder_task
 
 @app.post("/api/tasks/{task_id}/pause")
 async def pause_task(task_id: str):
@@ -319,6 +366,17 @@ async def _noop_task(**kwargs):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # Authenticate the WS handshake. Token may be supplied as a query param
+    # (?token=...) — for a local-only dev box with auth disabled, loopback
+    # connections are still admitted (see network.auth.verify_token).
+    client_ip = getattr(websocket.client, "host", None) or "unknown"
+    token = websocket.query_params.get("token", "")
+    if not verify_token(token, client_ip):
+        await websocket.accept()
+        await websocket.send_text(json.dumps({"type": "error", "message": "unauthorized"}))
+        await websocket.close(code=1008)
+        return
+
     ws_mgr = get_ws_manager()
     await ws_mgr.connect(websocket)
 

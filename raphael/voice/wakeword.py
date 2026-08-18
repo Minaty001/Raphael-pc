@@ -95,11 +95,17 @@ class PorcupineProvider(WakeWordProvider):
 
     name = "porcupine"
 
+    # Porcupine expects fixed-size PCM frames (16-bit mono). We accumulate
+    # incoming chunks and feed frame_length frames at a time.
+    FRAME_LENGTH = 512
+    SAMPLE_WIDTH = 2
+
     def __init__(self, wake_words: List[str], access_key: str = "", keywords: Optional[List[str]] = None):
         self.wake_words = wake_words
         self.access_key = access_key
         self.keywords = keywords or ["raphael"]
         self._handle = None
+        self._pending = b""
 
     def initialize(self) -> bool:
         try:
@@ -120,9 +126,17 @@ class PorcupineProvider(WakeWordProvider):
             return False
         try:
             import struct
-            samples = struct.unpack_from("<%dh" % (len(pcm) // 2), pcm)
-            for frame in samples:
-                if self._handle.process(frame) >= 0:
+            # Accumulate and drain frame-by-frame (Porcupine is NOT a streaming
+            # per-sample API — it needs FRAME_LENGTH samples per .process call).
+            self._pending += pcm
+            frame_bytes = self.FRAME_LENGTH * self.SAMPLE_WIDTH
+            while len(self._pending) >= frame_bytes:
+                frame = self._pending[:frame_bytes]
+                self._pending = self._pending[frame_bytes:]
+                samples = struct.unpack("<%dh" % self.FRAME_LENGTH, frame)
+                # Porcupine.process takes a list/array of int16 samples.
+                result = self._handle.process(list(samples))
+                if result >= 0:
                     return True
         except Exception as e:
             logger.error(f"Porcupine process error: {e}")
@@ -252,8 +266,14 @@ class WakeWordDetector:
         return False
 
     def get_post_wake_audio(self) -> bytes:
-        """Return the audio captured in the ring buffer (for STT after wake)."""
-        return self.ring.collect_all()
+        """Return only the audio captured AFTER the wake word fired.
+
+        Previously this returned `collect_all()` (the entire rolling buffer,
+        including pre-wake audio), which contradicted the documented behavior.
+        We now return audio from the wake timestamp onward so STT only sees the
+        actual command, not the wake phrase + pre-roll.
+        """
+        return self.ring.collect_since(self._last_wake_at)
 
     # ------------------------------------------------------------------
     # Transcript ingestion (default low-power path)

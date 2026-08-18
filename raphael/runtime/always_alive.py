@@ -85,12 +85,16 @@ class AlwaysAliveController:
         self._start_time = time.time()
 
         # Register health components (Section 8/9).
+        # NOTE: these are *startup* state flags. The live probe
+        # (_probe_websocket) later overrides "websocket" with the real client
+        # connection count, so we must NOT claim "connected" here before a
+        # client is actually attached (P0 #29).
         self._health.register("core", "alive", "always-alive controller up")
         self._health.register("voice", "ready", "wake listener registered")
         self._health.register("wakeword", "ready", "wake detector active")
         self._health.register("scheduler", "running", "task engine bound")
         self._health.register("memory", "healthy", "memory subsystem")
-        self._health.register("websocket", "connected", "gateway available")
+        self._health.register("websocket", "running", "gateway listening (no client yet)")
         self._health.register("llm", "available", "router ready")
 
         # Start background task engine + supervised workers (Section 10).
