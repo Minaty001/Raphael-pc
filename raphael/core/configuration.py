@@ -169,12 +169,17 @@ class CuriosityConfig:
     enabled: bool = True
     max_questions_per_hour: int = 2
 
+def _generate_token() -> str:
+    """Generate a cryptographically random auth token (hex, 64 chars)."""
+    import secrets
+    return secrets.token_hex(32)
+
 @dataclass
 class WebSocketConfig:
     host: str = "127.0.0.1"
     port: int = 8765
-    auth_required: bool = False  # Trusted for localhost by default
-    api_token: str = "raphael_secret_token"
+    auth_required: bool = True  # Require auth on all connections by default
+    api_token: str = field(default_factory=_generate_token)
 
 @dataclass
 class SecurityConfig:
@@ -207,27 +212,71 @@ class RaphaelConfig:
         return self.app.data_dir
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        # SECURITY: never expose API keys or auth tokens via REST/WS.
+        for secret_key in ("groq_api_key", "openrouter_api_key", "openai_api_key"):
+            if secret_key in d.get("llm", {}):
+                val = d["llm"][secret_key]
+                d["llm"][secret_key] = f"***set ({len(val)} chars)***" if val else ""
+        if "api_token" in d.get("websocket", {}):
+            d["websocket"]["api_token"] = "***REDACTED***"
+        return d
 
     @classmethod
     def load_defaults(cls) -> "RaphaelConfig":
         config = cls()
         os.makedirs(config.app.data_dir, exist_ok=True)
         config._apply_overrides()
+        # Persist the auto-generated auth token on first run so it stays
+        # stable across restarts. If the override file already has a token,
+        # _apply_overrides() will have loaded it — only write when missing.
+        config._ensure_token_persisted()
         return config
+
+    def _ensure_token_persisted(self) -> None:
+        """Persist the auth token to the override file if not already stored."""
+        path = self._overrides_path()
+        existing = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    existing = json.load(fh)
+            except Exception:
+                existing = {}
+        ws_overrides = existing.get("websocket", {})
+        if "api_token" not in ws_overrides:
+            ws_overrides["api_token"] = self.websocket.api_token
+            existing["websocket"] = ws_overrides
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(existing, fh, indent=2)
 
     def _overrides_path(self) -> str:
         return os.path.join(self.app.data_dir, "config.override.json")
 
     def _apply_overrides(self) -> None:
-        """Load persisted overrides (e.g. chosen LLM provider/model) if present."""
+        """Load persisted overrides (e.g. chosen LLM provider/model) if present.
+
+        Merges directly into `self` (not via the module singleton) so overrides
+        apply during initial `load_defaults()` — at that point the singleton is
+        not yet set, so routing through `update_config`/`get_config` would apply
+        them to a throwaway instance and they'd be silently lost.
+        """
         path = self._overrides_path()
         if not os.path.isfile(path):
             return
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            update_config(data)
+            for key, val in data.items():
+                if not hasattr(self, key):
+                    continue
+                sub_obj = getattr(self, key)
+                if isinstance(val, dict) and hasattr(sub_obj, "__dict__"):
+                    for sub_k, sub_v in val.items():
+                        if hasattr(sub_obj, sub_k):
+                            setattr(sub_obj, sub_k, sub_v)
+                else:
+                    setattr(self, key, val)
         except Exception:
             pass
 

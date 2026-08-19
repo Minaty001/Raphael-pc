@@ -16,9 +16,47 @@ export class RaphaelWebSocketClient {
   private reconnectAttempts = 0;
   private maxReconnectDelay = 10000;
   private isDemoMode = false;
+  private token: string = "";
   public isConnected = false;
 
-  constructor(private url: string = "ws://localhost:8765/ws") {}
+  constructor(private url: string = "ws://localhost:8765/ws") {
+    // Auto-load token from localStorage if available
+    this.token = localStorage.getItem("raphael_token") || "";
+  }
+
+  /**
+   * Obtain the API auth token if we don't already have one.
+   *
+   * The backend defaults to `auth_required=True` with a random token persisted
+   * on first run. The bundled localhost UI has no other way to learn it, so on
+   * startup it calls the public, loopback-only `/api/bootstrap` endpoint once
+   * and caches the token in localStorage. Safe to call repeatedly — it no-ops
+   * once a token is already known.
+   */
+  public async ensureToken(force = false): Promise<void> {
+    if (this.token && !force) return;
+    try {
+      const res = await fetch("http://localhost:8765/api/bootstrap");
+      if (res.ok) {
+        const data = (await res.json()) as { token?: string };
+        if (data.token) this.setToken(data.token);
+      }
+    } catch {
+      // Bootstrap unreachable (server down / dev server only) — the WS onopen
+      // handler will retry connect() which calls ensureToken again.
+    }
+  }
+
+  /** Set the auth token for all WS and REST connections. */
+  public setToken(token: string) {
+    this.token = token;
+    localStorage.setItem("raphael_token", token);
+  }
+
+  /** Get the current auth token. */
+  public getToken(): string {
+    return this.token;
+  }
 
   public setDemoMode(demo: boolean) {
     this.isDemoMode = demo;
@@ -31,11 +69,17 @@ export class RaphaelWebSocketClient {
     }
   }
 
-  public connect() {
+  public async connect() {
     if (this.isDemoMode) return;
 
+    // Wait for the auth token before opening the WS so the very first
+    // handshake carries it (no unauthenticated attempt + reconnect cycle).
+    await this.ensureToken();
+
     try {
-      this.socket = new WebSocket(this.url);
+      // Append auth token as query parameter for WS auth
+      const wsUrl = this.token ? `${this.url}?token=${encodeURIComponent(this.token)}` : this.url;
+      this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
         this.isConnected = true;
@@ -132,11 +176,20 @@ export class RaphaelWebSocketClient {
   }
 
   // ---- REST helpers for the Always-Alive Runtime (Sections 65-71) --------
-  private async rest<T = any>(path: string, method: string = "GET", body?: any): Promise<T | null> {
+  public async rest<T = any>(path: string, method: string = "GET", body?: any): Promise<T | null> {
+    // Ensure we have an auth token before making an authenticated call.
+    await this.ensureToken();
     try {
+      const headers: Record<string, string> = {};
+      if (body) {
+        headers["Content-Type"] = "application/json";
+      }
+      if (this.token) {
+        headers["Authorization"] = `Bearer ${this.token}`;
+      }
       const res = await fetch(`http://localhost:8765${path}`, {
         method,
-        headers: body ? { "Content-Type": "application/json" } : undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) return null;

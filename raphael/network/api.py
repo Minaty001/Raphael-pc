@@ -10,7 +10,7 @@ import json
 import time
 from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -35,7 +35,7 @@ from raphael.learning.reflection_engine import get_reflection_engine
 from raphael.runtime.always_alive import get_always_alive, RuntimeMode
 from raphael.runtime.health_monitor import get_health_monitor
 from raphael.runtime.tasks import get_task_manager, TaskPriority, TaskType
-from raphael.network.auth import verify_token
+from raphael.network.auth import verify_token, require_api_auth
 
 logger = get_logger("network.api")
 
@@ -94,6 +94,36 @@ async def health_check():
         "timestamp": time.time()
     }
 
+
+@app.get("/api/bootstrap")
+async def bootstrap_auth(request: Request):
+    """Public bootstrap that lets the local UI obtain the API auth token.
+
+    SECURITY MODEL
+    --------------
+    With the default config (``auth_required=True``) every REST route and the
+    WebSocket handshake require the api_token. The token is generated randomly
+    on first run and persisted to ``config.override.json``. There is no human
+    owner and no password, so the only way the bundled localhost UI can
+    authenticate is to read the same token the server is using.
+
+    To avoid exposing the token to the open internet, this endpoint is only
+    reachable from a loopback address (127.0.0.1 / ::1 / localhost). Non-local
+    clients get 403. The browser client calls this once on startup (no token
+    needed), stores the token in localStorage, and attaches it to every
+    subsequent WS/REST call via ``wsClient.setToken``.
+
+    This is an honest, local-only handshake — not a real credential system —
+    but it does stop *remote* unauthenticated access, which is the threat that
+    mattered when auth was previously disabled by default.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        logger.warning(f"/api/bootstrap refused for non-loopback client {client_ip}")
+        raise HTTPException(status_code=403, detail="Bootstrap only available from localhost")
+    return {"token": get_config().websocket.api_token}
+
+
 @app.get("/status")
 async def status_check():
     state_mgr = get_state_manager()
@@ -105,11 +135,11 @@ async def status_check():
         "timestamp": time.time()
     }
 
-@app.get("/api/config")
+@app.get("/api/config", dependencies=[Depends(require_api_auth)])
 async def get_configuration():
     return get_config().to_dict()
 
-@app.get("/api/config/llm")
+@app.get("/api/config/llm", dependencies=[Depends(require_api_auth)])
 async def get_llm_config():
     """Return LLM provider settings (no secrets) for the Settings UI."""
     cfg = get_config().llm
@@ -124,7 +154,7 @@ async def get_llm_config():
         "providers": ["groq", "ollama", "openrouter", "mock"],
     }
 
-@app.post("/api/config/llm")
+@app.post("/api/config/llm", dependencies=[Depends(require_api_auth)])
 async def set_llm_config(payload: Dict[str, Any] = Body(default={})):
     """Set the active LLM provider and/or Groq model. Persists across restarts."""
     allowed_providers = {"groq", "ollama", "openrouter", "mock"}
@@ -149,11 +179,11 @@ async def set_llm_config(payload: Dict[str, Any] = Body(default={})):
     return {"ok": True, "primary_provider": get_config().llm.primary_provider,
             "groq_model": get_config().llm.groq_model}
 
-@app.get("/api/tools")
+@app.get("/api/tools", dependencies=[Depends(require_api_auth)])
 async def list_available_tools():
     return get_tool_registry().list_tools()
 
-@app.post("/api/tools/execute")
+@app.post("/api/tools/execute", dependencies=[Depends(require_api_auth)])
 async def execute_tool_endpoint(payload: Dict[str, Any] = Body(...)):
     """Run a registered tool synchronously and return its result.
 
@@ -172,7 +202,7 @@ async def execute_tool_endpoint(payload: Dict[str, Any] = Body(...)):
     result = await reg.execute_tool(tool_name, args)
     return result
 
-@app.get("/api/audio/devices")
+@app.get("/api/audio/devices", dependencies=[Depends(require_api_auth)])
 async def list_audio_devices():
     """List all detected audio input devices and the auto-selected device.
 
@@ -212,41 +242,41 @@ async def list_audio_devices():
         "available": selector.available,
     }
 
-@app.get("/api/memories")
+@app.get("/api/memories", dependencies=[Depends(require_api_auth)])
 async def get_memories():
     return get_long_term_memory().list_memories()
 
 # Cognitive Brain Endpoints
-@app.get("/api/brain/context")
+@app.get("/api/brain/context", dependencies=[Depends(require_api_auth)])
 async def get_brain_context():
     return get_working_memory().get_summary()
 
-@app.get("/api/brain/user-model")
+@app.get("/api/brain/user-model", dependencies=[Depends(require_api_auth)])
 async def get_brain_user_profile():
     return get_user_model().get_profile()
 
-@app.get("/api/brain/goals")
+@app.get("/api/brain/goals", dependencies=[Depends(require_api_auth)])
 async def get_brain_goals():
     return get_goal_engine().list_active_goals()
 
-@app.get("/api/brain/open-loops")
+@app.get("/api/brain/open-loops", dependencies=[Depends(require_api_auth)])
 async def get_brain_open_loops():
     return get_open_loop_tracker().list_open_loops()
 
-@app.post("/api/brain/forget")
+@app.post("/api/brain/forget", dependencies=[Depends(require_api_auth)])
 async def forget_memory_endpoint(payload: Dict[str, Any] = Body(...)):
     keyword = payload.get("keyword", "").strip()
     if not keyword:
         raise HTTPException(status_code=400, detail="Keyword parameter required")
     return get_memory_manager().forget_memory(keyword)
 
-@app.post("/api/brain/reflect")
+@app.post("/api/brain/reflect", dependencies=[Depends(require_api_auth)])
 async def trigger_self_reflection(payload: Dict[str, Any] = Body(...)):
     task = payload.get("task", "manual_reflection")
     tool_res = payload.get("tool_result", {"status": "success", "duration_ms": 10})
     return await get_reflection_engine().reflect_on_task(task, tool_res, "Manual API reflection request")
 
-@app.post("/api/confirm")
+@app.post("/api/confirm", dependencies=[Depends(require_api_auth)])
 async def confirm_action(payload: Dict[str, Any] = Body(...)):
     request_id = payload.get("request_id")
     approved = payload.get("approved", False)
@@ -256,7 +286,7 @@ async def confirm_action(payload: Dict[str, Any] = Body(...)):
     success = get_confirmation_manager().resolve_confirmation(request_id, approved)
     return {"request_id": request_id, "resolved": success, "approved": approved}
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(require_api_auth)])
 async def send_chat_message(payload: Dict[str, Any] = Body(...)):
     text = payload.get("text", "").strip()
     if not text:
@@ -269,16 +299,16 @@ async def send_chat_message(payload: Dict[str, Any] = Body(...)):
 # ---------------------------------------------------------------------------
 # Always-Alive Runtime API (Sections 65-71)
 # ---------------------------------------------------------------------------
-@app.get("/api/runtime/health")
+@app.get("/api/runtime/health", dependencies=[Depends(require_api_auth)])
 async def runtime_health():
     monitor = get_health_monitor()
     return await monitor.snapshot()
 
-@app.get("/api/runtime/mode")
+@app.get("/api/runtime/mode", dependencies=[Depends(require_api_auth)])
 async def runtime_mode():
     return {"mode": get_always_alive().get_mode()}
 
-@app.post("/api/runtime/mode")
+@app.post("/api/runtime/mode", dependencies=[Depends(require_api_auth)])
 async def set_runtime_mode(payload: Dict[str, Any] = Body(...)):
     mode = payload.get("mode", "NORMAL").upper()
     if mode not in [m.value for m in RuntimeMode]:
@@ -286,16 +316,16 @@ async def set_runtime_mode(payload: Dict[str, Any] = Body(...)):
     await get_always_alive().set_mode(RuntimeMode(mode))
     return {"mode": mode}
 
-@app.post("/api/runtime/interrupt")
+@app.post("/api/runtime/interrupt", dependencies=[Depends(require_api_auth)])
 async def runtime_interrupt():
     await get_always_alive().interrupt()
     return {"interrupted": True}
 
-@app.get("/api/tasks")
+@app.get("/api/tasks", dependencies=[Depends(require_api_auth)])
 async def list_tasks():
     return get_task_manager().list()
 
-@app.post("/api/tasks")
+@app.post("/api/tasks", dependencies=[Depends(require_api_auth)])
 async def create_task(payload: Dict[str, Any] = Body(...)):
     """Create a background task.
 
@@ -358,22 +388,22 @@ def _resolve_api_task_coroutine(payload: Dict[str, Any], name: str, priority: st
         )
     return _run_reminder_task
 
-@app.post("/api/tasks/{task_id}/pause")
+@app.post("/api/tasks/{task_id}/pause", dependencies=[Depends(require_api_auth)])
 async def pause_task(task_id: str):
     ok = get_task_manager().pause(task_id)
     return {"ok": ok}
 
-@app.post("/api/tasks/{task_id}/resume")
+@app.post("/api/tasks/{task_id}/resume", dependencies=[Depends(require_api_auth)])
 async def resume_task(task_id: str):
     ok = get_task_manager().resume(task_id)
     return {"ok": ok}
 
-@app.post("/api/tasks/{task_id}/cancel")
+@app.post("/api/tasks/{task_id}/cancel", dependencies=[Depends(require_api_auth)])
 async def cancel_task(task_id: str):
     ok = get_task_manager().cancel(task_id)
     return {"ok": ok}
 
-@app.post("/api/tasks/{task_id}/retry")
+@app.post("/api/tasks/{task_id}/retry", dependencies=[Depends(require_api_auth)])
 async def retry_task(task_id: str):
     ok = get_task_manager().retry(task_id)
     return {"ok": ok}

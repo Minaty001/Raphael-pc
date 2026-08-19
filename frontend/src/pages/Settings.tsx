@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Settings as SettingsIcon, Shield, Sliders, Mic, Eye, Brain, Cloud, Sparkles } from "lucide-react";
+import { wsClient } from "../websocket";
 
 export const SettingsPage: React.FC = () => {
   const [autonomy, setAutonomy] = useState(2);
@@ -18,22 +19,16 @@ export const SettingsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:8765/api/config/llm")
-      .then((r) => r.json())
-      .then(setLlm)
+    wsClient.rest<any>("/api/config/llm")
+      .then((data) => data && setLlm(data))
       .catch(() => {});
   }, []);
 
   const applyLlm = async (patch: Partial<{ provider: string; groq_model: string }>) => {
     setSaving(true);
     try {
-      const res = await fetch("http://localhost:8765/api/config/llm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await wsClient.rest<any>("/api/config/llm", "POST", patch);
+      if (data) {
         setLlm((p) => ({ ...p, primary_provider: data.primary_provider, groq_model: data.groq_model }));
       }
     } finally {
