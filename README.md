@@ -133,10 +133,11 @@ honestly below so the UI never over-claims what the brain can do.
 - ✅ Agent loop now executes multi-step plans (audit #8 / ROADMAP L11): `ReasoningEngine.execute_plan` runs plan steps in order, verifies each via the real `ActionVerifier`, retries once on failure, and aborts with an honest report (no silent partial success) when a step can't be confirmed.
 - ✅ Real LLM streaming (audit #19 / ROADMAP Phase 4): `llm_router` now performs genuine chunked HTTP streaming (Ollama NDJSON, OpenAI-compatible SSE for Groq/OpenRouter) yielding tokens as they arrive — no more fake word-split replay of a buffered response; `chat()` is derived from `stream()`.
 - ✅ Streaming STT (audit #4 remainder / ROADMAP L3.6): `STTProvider.transcribe_stream` is now a real async generator; `VoskProvider` emits incremental `PartialResult()` transcripts per audio chunk plus a final `Result()` (genuine low-latency streaming), while non-incremental engines (Whisper) honestly stay buffered.
+- ✅ LLM-driven planner (ROADMAP L8): `Planner.create_plan` keeps fast deterministic pattern matches for common requests and now falls back to LLM decomposition (using the live tool registry) for novel multi-step tasks; invalid tool names are dropped and any LLM failure degrades gracefully to an empty plan. Pairs with the already-wired `ReasoningEngine.execute_plan` agent loop.
 
 **Known gaps being addressed (P1/P2):**
-- LLM-driven autonomous planning (planner is pattern-matched, not
-  model-generated), real browser automation, and multimodal screen OCR.
+- Real browser automation and multimodal screen OCR (currently limited
+  perception), and broader proactive-intelligence tuning.
 
 See the in-repo audit notes for the full prioritized roadmap.
 

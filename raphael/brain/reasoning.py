@@ -174,7 +174,7 @@ class ReasoningEngine:
         else:
             # Multi-step intent: build a plan and EXECUTE it as a loop.
             await self.state_mgr.set_state(AssistantState.PLANNING)
-            plan = self.planner.create_plan(text)
+            plan = await self.planner.create_plan(text)
 
             if plan:
                 plan_result = await self.execute_plan(plan, text)
