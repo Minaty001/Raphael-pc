@@ -14,7 +14,7 @@ Selected by config.voice.stt_provider ('vosk' | 'web' | 'whisper' | 'mock').
 import asyncio
 import os
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, AsyncGenerator
 
 from raphael.core.configuration import get_config
 from raphael.core.logging import get_logger
@@ -30,10 +30,21 @@ class STTProvider(ABC):
         """Transcribe raw PCM/audio bytes into text."""
         ...
 
-    async def transcribe_stream(self, audio_chunks) -> str:
-        """Optional streaming transcription; default joins then transcribes."""
-        data = b"".join(audio_chunks)
-        return await self.transcribe(data)
+    async def transcribe_stream(self, audio_chunks: AsyncGenerator[bytes, None]) -> AsyncGenerator[str, None]:
+        """Streaming transcription.
+
+        Yields partial transcript texts as audio arrives, then a final
+        transcript. The default implementation is BUFFERED: it collects all
+        chunks and emits only the final result (correct for engines without
+        native streaming, e.g. Whisper). Engines with incremental support
+        (e.g. Vosk) override this to emit partials per chunk (ROADMAP L3.6).
+        """
+        data = b""
+        async for chunk in audio_chunks:
+            data += chunk
+        final = await self.transcribe(data)
+        if final:
+            yield final
 
 
 class MockSTTProvider(STTProvider):
@@ -74,6 +85,28 @@ class VoskProvider(STTProvider):
         self._recognizer.AcceptWaveform(audio_data)
         result = json.loads(self._recognizer.Result())
         return result.get("text", "")
+
+    async def transcribe_stream(self, audio_chunks: AsyncGenerator[bytes, None]) -> AsyncGenerator[str, None]:
+        """Real incremental transcription via Vosk partial results.
+
+        Emits a partial transcript after each audio chunk (low latency), then
+        a final transcript once all audio is consumed. This is genuine
+        streaming -- partials arrive as the user is still speaking.
+        """
+        if not self._ensure():
+            return
+        import json
+        async for chunk in audio_chunks:
+            self._recognizer.AcceptWaveform(chunk)
+            partial = json.loads(self._recognizer.PartialResult())
+            text = partial.get("partial", "")
+            if text:
+                yield text
+        final = json.loads(self._recognizer.Result())
+        text = final.get("text", "")
+        if text:
+            yield text
+
 
 
 class WebSpeechProvider(STTProvider):
