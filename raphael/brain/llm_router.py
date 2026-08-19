@@ -10,7 +10,6 @@ is a single network path and no fake word-split replay.
 
 import asyncio
 import json
-import queue
 import threading
 import urllib.request
 import urllib.error
@@ -36,28 +35,36 @@ async def _streaming_request(
     parsed deltas into a queue; the async generator pulls from the queue so the
     event loop is never blocked waiting on the network.
     """
-    q: "queue.Queue[Any]" = queue.Queue()
+    # Use the event loop's queue and schedule puts thread-safely.  Calling a
+    # blocking ``queue.Queue.get`` through ``asyncio.to_thread`` can leave the
+    # stream suspended indefinitely during AnyIO/asyncio teardown, even after
+    # the HTTP reader has delivered its final sentinel.
+    loop = asyncio.get_running_loop()
+    q: "asyncio.Queue[Any]" = asyncio.Queue()
     _SENTINEL = object()
 
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
     def _worker() -> None:
+        def _put(item: Any) -> None:
+            loop.call_soon_threadsafe(q.put_nowait, item)
+
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 for raw_line in resp:
                     for delta in parse_fn(raw_line):
                         if delta:
-                            q.put(delta)
+                            _put(delta)
         except Exception as exc:  # surface network/parse errors to the consumer
-            q.put(exc)
+            _put(exc)
         finally:
-            q.put(_SENTINEL)
+            _put(_SENTINEL)
 
     threading.Thread(target=_worker, daemon=True).start()
 
     while True:
-        item = await asyncio.to_thread(q.get)
+        item = await q.get()
         if item is _SENTINEL:
             break
         if isinstance(item, Exception):
@@ -182,6 +189,13 @@ class GroqProvider(OpenAICompatibleProvider):
         super().__init__("https://api.groq.com/openai/v1", api_key, model, "Groq")
 
 
+class OpenAIProvider(OpenAICompatibleProvider):
+    """OpenAI (and OpenAI-compatible) chat completions API."""
+
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
+        super().__init__("https://api.openai.com/v1", api_key, model, "OpenAI")
+
+
 class LocalMockProvider(LLMProvider):
     async def is_available(self) -> bool:
         return True
@@ -213,6 +227,7 @@ class LLMRouter:
             "ollama": OllamaProvider(self.config.llm.ollama_host, self.config.llm.ollama_model),
             "groq": GroqProvider(self.config.llm.groq_api_key, self.config.llm.groq_model),
             "openrouter": OpenRouterProvider(self.config.llm.openrouter_api_key, self.config.llm.openrouter_model),
+            "openai": OpenAIProvider(self.config.llm.openai_api_key, self.config.llm.openai_model),
             "mock": LocalMockProvider(),
         }
 

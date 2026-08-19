@@ -2,57 +2,156 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RAPHAEL</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAPHAEL — Always-Alive Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=1.2.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.ico?v=2.0.0" type="image/x-icon">
+    <link rel="stylesheet" href="css/style.css?v=2.0.0">
 </head>
 <body>
     <div id="particles"></div>
-    
-    <header>
-        <div class="logo">RAPHAEL</div>
-        <button id="settings-btn" aria-label="Settings">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-        </button>
+
+    <!-- ── Top bar ───────────────────────────────────────────── -->
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-mark">◆</span>
+            <span class="brand-name">RAPHAEL</span>
+            <span class="brand-sub">Always-Alive Runtime</span>
+        </div>
+
+        <div class="header-center">
+            <div id="state-pill" class="state-pill" data-state="OFFLINE">
+                <span class="state-dot"></span>
+                <span id="state-pill-text">OFFLINE</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <div id="clock" class="clock">--:--:--</div>
+            <button id="settings-btn" class="icon-btn" aria-label="Settings">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+        </div>
     </header>
 
-    <main>
-        <div class="halo-container">
-            <canvas id="halo-canvas" width="400" height="400"></canvas>
-            <div id="status-label">WAKING</div>
-        </div>
-        
-        <div class="response-area">
-            <div id="response-text"></div>
-        </div>
-    </main>
+    <!-- ── Main grid ────────────────────────────────────────── -->
+    <div class="layout">
+        <!-- Left: system + runtime -->
+        <aside class="panel sidebar-left">
+            <section class="card">
+                <h3 class="card-title">System</h3>
+                <div class="metric">
+                    <div class="metric-head"><span>CPU</span><span id="m-cpu">--%</span></div>
+                    <div class="bar"><div id="bar-cpu" class="bar-fill cpu"></div></div>
+                </div>
+                <div class="metric">
+                    <div class="metric-head"><span>Memory</span><span id="m-ram">--%</span></div>
+                    <div class="bar"><div id="bar-ram" class="bar-fill ram"></div></div>
+                    <div class="metric-sub" id="m-ram-sub">-- / -- MB</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-head"><span>Disk</span><span id="m-disk">--%</span></div>
+                    <div class="bar"><div id="bar-disk" class="bar-fill disk"></div></div>
+                    <div class="metric-sub" id="m-disk-sub">-- / -- GB</div>
+                </div>
+                <div class="metric" id="battery-wrap" hidden>
+                    <div class="metric-head"><span>Battery</span><span id="m-bat">--%</span></div>
+                    <div class="bar"><div id="bar-bat" class="bar-fill bat"></div></div>
+                </div>
+            </section>
 
-    <div class="input-area">
-        <form id="chat-form">
-            <input type="text" id="text-input" placeholder="Speak or type..." autocomplete="off">
-            <button type="button" id="mic-btn" aria-label="Microphone">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                    <line x1="12" y1="19" x2="12" y2="23"></line>
-                    <line x1="8" y1="23" x2="16" y2="23"></line>
-                </svg>
-            </button>
-            <button type="submit" id="send-btn" aria-label="Send">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-            </button>
-        </form>
+            <section class="card">
+                <h3 class="card-title">Runtime</h3>
+                <div class="runtime-row">
+                    <span>Mode</span>
+                    <select id="runtime-mode" class="select">
+                        <option value="NORMAL">NORMAL</option>
+                        <option value="FOCUS">FOCUS</option>
+                        <option value="PAUSE">PAUSE</option>
+                        <option value="SLEEP">SLEEP</option>
+                    </select>
+                </div>
+                <div class="runtime-row">
+                    <span>Effective</span>
+                    <span id="effective-mode" class="tag">--</span>
+                </div>
+                <button id="interrupt-btn" class="ghost-btn">Interrupt</button>
+            </section>
+        </aside>
+
+        <!-- Center: brain + conversation -->
+        <main class="stage">
+            <div class="halo-container">
+                <canvas id="halo-canvas" width="320" height="320"></canvas>
+                <div id="status-label">WAKING</div>
+            </div>
+
+            <div id="conversation" class="conversation" aria-live="polite">
+                <div class="msg-system">RAPHAEL online. Waiting for the runtime…</div>
+            </div>
+
+            <div class="input-area">
+                <form id="chat-form">
+                    <input type="text" id="text-input" placeholder="Speak or type to Raphael…" autocomplete="off">
+                    <button type="button" id="mic-btn" class="round-btn" aria-label="Microphone">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
+                    <button type="submit" id="send-btn" class="round-btn" aria-label="Send">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </main>
+
+        <!-- Right: activity / tasks / memory -->
+        <aside class="panel sidebar-right">
+            <div class="tabs" role="tablist">
+                <button class="tab active" data-tab="activity">Activity</button>
+                <button class="tab" data-tab="tasks">Tasks</button>
+                <button class="tab" data-tab="memory">Memory</button>
+            </div>
+
+            <div class="tab-body">
+                <div id="tab-activity" class="tab-pane active">
+                    <div id="event-log" class="event-log"></div>
+                </div>
+                <div id="tab-tasks" class="tab-pane">
+                    <div id="task-list" class="task-list">
+                        <div class="empty">No background tasks.</div>
+                    </div>
+                </div>
+                <div id="tab-memory" class="tab-pane">
+                    <div id="memory-list" class="memory-list">
+                        <div class="empty">No memories loaded.</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
     </div>
 
+    <!-- ── Status bar ──────────────────────────────────────── -->
+    <footer class="status-bar">
+        <span id="conn-status" class="conn-off">● disconnected</span>
+        <span id="ws-latency" class="sb-item">latency: --</span>
+        <span id="sb-state" class="sb-item">state: --</span>
+        <span class="sb-spacer"></span>
+        <span id="sb-version" class="sb-item">RAPHAEL v2.0.0</span>
+    </footer>
+
+    <!-- ── Settings overlay ───────────────────────────────── -->
     <div id="settings-panel" class="overlay hidden">
         <div class="settings-content">
             <h2>Configuration</h2>
@@ -65,7 +164,22 @@
         </div>
     </div>
 
-    <script src="src/services/api.js?v=1.2.0"></script>
-    <script src="src/app.js?v=1.2.0"></script>
+    <!-- ── Confirmation modal (security) ──────────────────── -->
+    <div id="confirm-panel" class="overlay hidden">
+        <div class="settings-content confirm-card">
+            <h2>⚠ Confirm action</h2>
+            <p id="confirm-text" class="confirm-text">A tool needs your approval.</p>
+            <div class="confirm-actions">
+                <button id="confirm-approve" class="primary-btn">Approve</button>
+                <button id="confirm-deny" class="secondary-btn">Deny</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Toast container ─────────────────────────────────── -->
+    <div id="toasts" class="toasts"></div>
+
+    <script src="src/services/api.js?v=2.0.0"></script>
+    <script src="src/app.js?v=2.0.0"></script>
 </body>
 </html>

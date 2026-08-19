@@ -186,10 +186,10 @@ no extra steps needed beyond creating the file.
 ```bash
 cd Raphael-pc
 
-# Create an empty .env, then paste your keys (editor or heredoc)
-touch .env
-cat > .env <<'EOF'
-GROQ_API_KEY=gsk_xxxYourKeyHere
+# Copy the template, then paste your keys (editor or heredoc)
+cp .example.env .env
+nano .env          # or: cat > .env <<'EOF'
+GROQ_API_KEY=«redacted:gsk_…»
 EOF
 ```
 
@@ -203,7 +203,7 @@ EOF
 |---|---|---|---|
 | `GROQ_API_KEY` | Groq LLM (free models, default primary provider) | Recommended* | `configuration.py` |
 | `OPENROUTER_API_KEY` | OpenRouter LLM (Meta/Anthropic/etc.) | Optional | `configuration.py` |
-| `OPENAI_API_KEY` | OpenAI-compatible LLM / Whisper | Optional | `configuration.py` |
+| `OPENAI_API_KEY` | OpenAI LLM (gpt-4o-mini and friends) | Optional | `configuration.py` |
 | `VOSK_MODEL_PATH` | Path to offline Vosk STT model folder | Optional** | `raphael/voice/stt.py` |
 | `PORCUPINE_ACCESS_KEY` | Picovoice Porcupine wake-word KWS | Optional | `raphael/voice/wakeword.py` |
 | `RAPHAEL_WS_HOST` | Override WebSocket bind host (default `127.0.0.1`) | Optional | `runtime_launcher.py` |
@@ -243,12 +243,12 @@ VOSK_MODEL_PATH=/home/youruser/models/vosk-model-small-en-us-0.15
 
 ### WebSocket auth token
 
-The gateway is **auth-gated**. By default it accepts loopback connections
-(`127.0.0.1`/`localhost`) without a token, and ships with a placeholder token
-for non-loopback use. **For any non-localhost exposure, rotate it** — set it in
-`~/.raphael/config.override.json` (the runtime writes a random one on first
-run) or pass `?token=<your_token>` from the client. Never reuse the committed
-placeholder in production.
+The gateway is **auth-gated**, including loopback connections. On first run it
+generates and persists a random token in `~/.raphael/config.override.json`.
+The bundled localhost UI obtains it through the loopback-only `/api/bootstrap`
+endpoint and attaches it to REST and WebSocket calls automatically. For any
+non-localhost client, pass the token explicitly; never expose it in a public
+URL or commit it to source control.
 
 ---
 

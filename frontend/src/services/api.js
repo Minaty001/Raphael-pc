@@ -34,22 +34,56 @@ function normalizeWsUrl(raw) {
 
 // ── Token bootstrap (loopback only) ────────────────────────────────────────
 // Mirrors the React client: fetch the token from /api/bootstrap, cache it.
+let tokenRequest = null;
+
 async function ensureToken() {
     const cached = localStorage.getItem('raphael_token');
     if (cached) return cached;
-    try {
-        const res = await fetch(`${BACKEND_ORIGIN}/api/bootstrap`);
-        if (res.ok) {
-            const data = await res.json();
-            if (data && data.token) {
-                localStorage.setItem('raphael_token', data.token);
-                return data.token;
+
+    // Startup opens a socket and several REST panels at once. Share one
+    // bootstrap request so none of those callers proceeds with an empty token.
+    if (!tokenRequest) {
+        tokenRequest = (async () => {
+            try {
+                const res = await fetch(`${BACKEND_ORIGIN}/api/bootstrap`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.token) {
+                        localStorage.setItem('raphael_token', data.token);
+                        return data.token;
+                    }
+                }
+            } catch (e) {
+                console.warn('[auth] bootstrap failed (server down?):', e);
+            } finally {
+                tokenRequest = null;
             }
-        }
-    } catch (e) {
-        console.warn('[auth] bootstrap failed (server down?):', e);
+            return '';
+        })();
     }
-    return '';
+    return tokenRequest;
+}
+
+async function authHeaders(contentType = false) {
+    const token = await ensureToken();
+    const headers = contentType ? { 'Content-Type': 'application/json' } : {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+}
+
+function withLocalToken(wsUrl, token) {
+    if (!token) return wsUrl;
+    try {
+        const url = new URL(wsUrl);
+        // Never leak the local assistant token to a user-configured remote WS.
+        if (!['localhost', '127.0.0.1', '::1'].includes(url.hostname) || url.searchParams.has('token')) {
+            return wsUrl;
+        }
+        url.searchParams.set('token', token);
+        return url.toString();
+    } catch (_) {
+        return wsUrl;
+    }
 }
 
 window.RaphaelApi = {
@@ -60,9 +94,51 @@ window.RaphaelApi = {
         return token ? `${base}?token=${encodeURIComponent(token)}` : base;
     },
 
-    /** GET /health on the backend. */
-    health() {
-        return fetch(`${BACKEND_ORIGIN}/health`);
+    /** GET /status — public state + system metrics. */
+    async status() {
+        const res = await fetch(`${BACKEND_ORIGIN}/status`);
+        if (!res.ok) throw new Error('status failed');
+        return await res.json();
+    },
+
+    /** GET /api/tasks (auth-gated) — list background tasks. */
+    async listTasks() {
+        const headers = await authHeaders();
+        const res = await fetch(`${BACKEND_ORIGIN}/api/tasks`, { headers });
+        if (!res.ok) throw new Error('listTasks failed');
+        return await res.json();
+    },
+
+    /** POST /api/tasks/{id}/{act} where act ∈ pause|resume|cancel|retry. */
+    async taskAction(act, id) {
+        const headers = await authHeaders(true);
+        const res = await fetch(`${BACKEND_ORIGIN}/api/tasks/${encodeURIComponent(id)}/${act}`, { method: 'POST', headers });
+        if (!res.ok) throw new Error('taskAction failed');
+        return await res.json();
+    },
+
+    /** GET /api/memories (auth-gated) — list long-term memories. */
+    async listMemories() {
+        const headers = await authHeaders();
+        const res = await fetch(`${BACKEND_ORIGIN}/api/memories`, { headers });
+        if (!res.ok) throw new Error('listMemories failed');
+        return await res.json();
+    },
+
+    /** POST /api/runtime/mode — set the always-alive runtime mode. */
+    async setMode(mode) {
+        const headers = await authHeaders(true);
+        const res = await fetch(`${BACKEND_ORIGIN}/api/runtime/mode`, { method: 'POST', headers, body: JSON.stringify({ mode }) });
+        if (!res.ok) throw new Error('setMode failed');
+        return await res.json();
+    },
+
+    /** POST /api/runtime/interrupt — interrupt the runtime. */
+    async interrupt() {
+        const headers = await authHeaders(true);
+        const res = await fetch(`${BACKEND_ORIGIN}/api/runtime/interrupt`, { method: 'POST', headers });
+        if (!res.ok) throw new Error('interrupt failed');
+        return await res.json();
     },
 
     /**
@@ -72,8 +148,9 @@ window.RaphaelApi = {
      * to the handshake URL. Returns the WebSocket, or null if construction threw.
      */
     async connect(serverUrl, handlers) {
-        await ensureToken();
+        const token = await ensureToken();
         let wsUrl = normalizeWsUrl(serverUrl) || RaphaelApi.defaultWsUrl();
+        wsUrl = withLocalToken(wsUrl, token);
         try {
             const ws = new WebSocket(wsUrl);
             if (handlers.onopen) ws.onopen = handlers.onopen;
@@ -94,9 +171,7 @@ window.RaphaelApi = {
 
     /** POST /tts — returns the decoded audio ArrayBuffer (throws on non-OK). */
     async tts(text) {
-        const token = localStorage.getItem('raphael_token') || '';
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const headers = await authHeaders(true);
         const response = await fetch(`${BACKEND_ORIGIN}/api/tts`, {
             method: 'POST',
             headers,

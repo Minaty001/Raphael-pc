@@ -1,93 +1,80 @@
 # 💻 Raphael HUD Frontend
 
-The **Raphael HUD** is a real-time React + Vite desktop interface designed to connect to the
-persistent **Raphael Always-Alive Runtime** via WebSockets and REST.
+The **Raphael HUD** is a real-time desktop interface for the persistent
+**Raphael Always-Alive Runtime**. It connects over WebSockets and REST and is
+served by the backend itself — **no build step, no framework**. It is plain
+HTML + CSS + vanilla JS so it runs as static files mounted by
+`raphael/network/api.py` (`StaticFiles(directory=frontend, html=True)`).
 
 ---
 
-## 🎨 Key Features & UI Components
+## 📁 Layout
 
-### Top Navigation & Global Controls (`src/components/layout/`)
-- **`AliveIndicator`**: Live status pill showing WebSocket connection state (`ONLINE` / `OFFLINE`),
-  active runtime mode (`NORMAL`, `FOCUS`, `PAUSE`, `SLEEP`), and background worker counts.
-- **`BackgroundTaskDrawer`**: Slide-out drawer displaying running and queued background tasks with
-  progress bars, pause/resume, cancel, and retry controls.
-- **`VoiceStatus`**: Real-time privacy indicator reflecting the 9 audio states (e.g.
-  `LISTENING_WAKE`, `RECORDING_COMMAND`, `MUTED`).
-
-### Assistant Character (`src/components/character/`)
-- **`CharacterStage`**: A 2.5D scene with parallax depth layers, a perspective floor, and a contact
-  shadow. Pointer movement drives eye-tracking and parallax depth-of-field.
-- **`Character`**: A procedurally-drawn layered SVG anime schoolgirl. Real-time facial expressions
-  (happy, surprise, concern, thinking, speaking, idle blink), eye-tracking, mouth flap, and hand
-  gestures (wave, point, confirm, thinking, loading, excited).
-- **`anim/engine.ts`**: A single `requestAnimationFrame` loop driving spring/eased/oscillator
-  motion directly to element transforms — no per-frame React re-render, for smooth 60fps.
-- **`CharacterContext.tsx`** + **`intent.ts`**: A trigger bus mapping runtime state and events
-  (errors, success, clicks, hover, security confirmations) to character reactions.
-
-The character is integrated into the Home view and reacts to runtime state (idle, listening,
-thinking, executing, speaking, error, offline) and live WebSocket events.
-
-### Interactive Panels & Modals (`src/components/`)
-- **`RaphaelOrb`**: Dynamic visual orb animating in sync with voice activity, cognition processing,
-  and sleeping states.
-- **`CognitiveBrainPanel`**: Live view of current goals, planner sub-tasks, active attention
-  context, and reasoning steps.
-- **`ConfirmationModal`**: Security pop-up for approving high-risk tool executions (e.g., shell
-  command execution).
-- **`DeveloperConsole`**: Embedded streaming tool output and diagnostic log viewer.
-
-### View Pages (`src/pages/`)
-| Page | Route / View | Description |
-|---|---|---|
-| **Home** | `/` | Main HUD dashboard with the 2.5D assistant character, voice status, and real-time conversation stream. |
-| **Memory** | `/memory` | Interactive explorer for working, episodic, semantic, and procedural memory. |
-| **Activity** | `/activity` | System audit trail, task execution history, and event logs. |
-| **Models** | `/models` | LLM router provider settings (Ollama, Groq, OpenAI, Anthropic). |
-| **Goals** | `/goals` | Multi-step user goals and active open loops. |
-| **System** | `/system` | CPU/RAM utilization, health status of runtime workers, and system metrics. |
-| **Tools** | `/tools` | Tool registry viewer with risk permissions (`READ_ONLY`, `LOW`, `MODERATE`, `HIGH`). |
-| **Reminders** | `/reminders` | Active contextual reminders and scheduled alerts. |
-| **Developer** | `/developer` | Subsystem diagnostics, API log streams, and command execution tester. |
-| **Vision** | `/vision` | Screen perception and visual understanding stream. |
-| **Routines** | `/routines` | Scheduled proactive routines and morning briefing configuration. |
-| **Settings** | `/settings` | Voice parameters, wake-word sensitivity, runtime mode toggles, and autostart preferences. |
-
----
-
-## 🛠️ Development & Build Scripts
-
-From the `frontend/` directory:
-
-```bash
-# Install dependencies
-npm install
-
-# Run dev server with hot reload
-npm run dev
-
-# Type-check the project (uses tsconfig.json via typecheck.mjs)
-npm run typecheck
-
-# Build for production (outputs to dist/)
-npm run build
-
-# Type-check AND build in one step
-npm run check
-
-# Preview production build locally
-npm run preview
+```
+frontend/
+├── index.html              # single page: header, halo canvas, response area, input, settings
+├── css/style.css           # design tokens (CSS variables) + all UI styling
+└── src/
+    ├── services/api.js     # window.RaphaelApi — REST + WS + token bootstrap (loaded first)
+    └── app.js              # RaphaelApp — UI state, halo/particle canvas, event handling
 ```
 
+There is **no** `npm install`, `vite`, `tsc`, or `dist/`. Edit the files
+directly; the backend serves them as-is.
+
 ---
 
-## 📡 Gateway Integration
+## 🎨 What's on screen
 
-The frontend connects to the backend runtime via:
-- **WebSocket**: `ws://localhost:8765/ws` — pass `?token=<api_token>` (managed by
-  `src/websocket.ts` and `src/stores/raphaelStore.ts`).
-- **REST API**: `http://localhost:8765/api`
+- **Halo canvas** (`#halo-canvas`) — a procedurally-drawn animated orb whose
+  colour and motion reflect the assistant state (`WAKING` / `IDLE` /
+  `LISTENING` / `THINKING` / `SPEAKING` / `ERROR`). Tap it to toggle listening.
+- **Status label** — the current state, colour-coded.
+- **Response area** — the assistant's text reply, plus a live **actions list**
+  of tool calls (`tool.started` → `RUN`, `tool.completed` → `DONE`/`FAIL`)
+  rendered update-in-place (no duplicate badges).
+- **Input area** — type a message, or use the mic button / Spacebar to speak
+  (browser `SpeechRecognition`).
+- **Settings** (gear icon) — set the WebSocket/Server URL (defaults to the
+  local gateway). Saved to `localStorage`.
 
-> The WebSocket is **auth-gated**. The runtime configuration supplies the shared
-> `websocket.api_token`; the HUD includes it on the connection URL.
+---
+
+## 🔐 Gateway integration
+
+The frontend talks to the backend runtime via:
+
+- **WebSocket**: `ws://localhost:8765/ws?token=<api_token>` — the token is
+  bootstrapped once from the loopback-only `/api/bootstrap` endpoint and cached
+  in `localStorage` (see `src/services/api.js`).
+- **REST API**: `http://localhost:8765/api/*` (all gated by the same token,
+  except `/health`, `/status`, and `/api/bootstrap`).
+
+The WebSocket is **auth-gated**; the HUD fetches the token before opening the
+connection.
+
+---
+
+## ▶️ Running it
+
+The UI ships with the backend. Start the runtime:
+
+```bash
+cd /home/saif/Desktop/Raphael-pc
+source venv/bin/activate
+python -m uvicorn raphael.network.api:app --host 127.0.0.1 --port 8765
+```
+
+Then open `http://localhost:8765/` in a browser (Chrome/Edge recommended for
+`SpeechRecognition`). No separate frontend dev server is required.
+
+---
+
+## ♿ Accessibility / performance notes
+
+- Honours `prefers-reduced-motion: reduce` — renders a single static halo frame
+  instead of animating.
+- Pauses the halo + particle `requestAnimationFrame` loops when the tab is
+  hidden (resumes on focus) to avoid needless CPU/battery drain.
+- Tool names/args are rendered with `textContent` (never `innerHTML`), so
+  backend-supplied values cannot inject markup.

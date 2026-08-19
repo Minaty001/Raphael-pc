@@ -147,33 +147,56 @@ async def get_llm_config():
         "ollama_model": cfg.ollama_model,
         "openrouter_model": cfg.openrouter_model,
         "openai_model": cfg.openai_model,
-        "providers": ["groq", "ollama", "openrouter", "mock"],
+        "providers": ["groq", "ollama", "openrouter", "openai", "mock"],
     }
 
 @app.post("/api/config/llm", dependencies=[Depends(require_api_auth)])
 async def set_llm_config(payload: Dict[str, Any] = Body(default={})):
-    """Set the active LLM provider and/or Groq model. Persists across restarts."""
-    allowed_providers = {"groq", "ollama", "openrouter", "mock"}
+    """Set the active LLM provider and/or Groq model. Persists across restarts.
+
+    - ``provider`` must be one of the supported providers (groq, ollama,
+      openrouter, openai, mock).
+    - ``groq_model`` is validated against the curated free-model list when no
+      key is configured; when a GROQ_API_KEY is present we trust the caller
+      (the key gates the actual API call) so newly-added free models work
+      without waiting for a code change.
+    """
+    allowed_providers = {"groq", "ollama", "openrouter", "openai", "mock"}
     updates: Dict[str, Any] = {}
     if "provider" in payload:
         provider = payload["provider"]
-        if provider not in allowed_providers:
-            raise HTTPException(status_code=400, detail="Invalid provider")
-        updates["llm"] = updates.get("llm", {})
-        updates["llm"]["primary_provider"] = provider
+        if not isinstance(provider, str) or provider not in allowed_providers:
+            raise HTTPException(status_code=400, detail=f"Invalid provider '{provider}'")
+        updates.setdefault("llm", {})["primary_provider"] = provider
     if "groq_model" in payload:
         model = payload["groq_model"]
-        if model not in get_config().llm.groq_free_models:
-            raise HTTPException(status_code=400, detail="Model not in free-models list")
-        updates["llm"] = updates.get("llm", {})
-        updates["llm"]["groq_model"] = model
+        if not isinstance(model, str) or not model.strip():
+            raise HTTPException(status_code=400, detail="groq_model must be a non-empty string")
+        free = get_config().llm.groq_free_models
+        has_key = bool(get_config().llm.groq_api_key)
+        if model not in free and not has_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{model}' not in free-models list and no GROQ_API_KEY set",
+            )
+        updates.setdefault("llm", {})["groq_model"] = model
+    # Allow setting the OpenAI model name too (used when provider == openai).
+    if "openai_model" in payload:
+        model = payload["openai_model"]
+        if not isinstance(model, str) or not model.strip():
+            raise HTTPException(status_code=400, detail="openai_model must be a non-empty string")
+        updates.setdefault("llm", {})["openai_model"] = model
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields provided")
     update_config(updates)
     get_config().save_overrides(updates)
     get_llm_router().rebuild()
-    return {"ok": True, "primary_provider": get_config().llm.primary_provider,
-            "groq_model": get_config().llm.groq_model}
+    return {
+        "ok": True,
+        "primary_provider": get_config().llm.primary_provider,
+        "groq_model": get_config().llm.groq_model,
+        "openai_model": get_config().llm.openai_model,
+    }
 
 @app.get("/api/tools", dependencies=[Depends(require_api_auth)])
 async def list_available_tools():

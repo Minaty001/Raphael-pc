@@ -9,6 +9,7 @@ notified (Section 10). No single background worker may kill Raphael.
 """
 
 import asyncio
+import os
 import time
 import shutil
 import psutil
@@ -85,13 +86,43 @@ class RuntimeHealthMonitor:
             except Exception as e:
                 return {"status": "error", "detail": f"llm: {e}"}
 
-        # Voice probe: mic + wakeword availability (non-fatal if missing).
+        # Voice probe: report the actual native-capture prerequisites.  A wake
+        # detector object can exist even when no audio backend or STT model is
+        # available, so reporting it as merely "ready" was misleading.
         async def _probe_voice() -> Dict[str, Any]:
             try:
+                from raphael.voice.microphone import get_microphone
                 from raphael.voice.wakeword import get_wake_word_detector
+
+                mic = get_microphone()
                 wd = get_wake_word_detector()
-                return {"status": "ready" if wd.enabled else "paused",
-                        "detail": "wake detector" + ("" if wd.enabled else " (disabled)")}
+                if not wd.enabled:
+                    return {"status": "paused", "detail": "wake detector disabled"}
+                if not mic.available:
+                    return {
+                        "status": "unavailable",
+                        "detail": "native microphone backend unavailable (install sounddevice)",
+                    }
+                if not getattr(mic, "_running", False):
+                    return {
+                        "status": "degraded",
+                        "detail": "audio backend available, but microphone capture is not running",
+                    }
+
+                voice_cfg = get_config().voice
+                if voice_cfg.stt_provider == "vosk":
+                    model_path = os.getenv("VOSK_MODEL_PATH", "")
+                    if not os.path.isdir(model_path):
+                        return {
+                            "status": "degraded",
+                            "detail": "microphone active; Vosk model is not configured (set VOSK_MODEL_PATH)",
+                        }
+                if voice_cfg.stt_provider == "web":
+                    return {
+                        "status": "degraded",
+                        "detail": "microphone active; Web Speech only accepts browser transcripts",
+                    }
+                return {"status": "ready", "detail": f"microphone active; {voice_cfg.stt_provider} STT configured"}
             except Exception as e:
                 return {"status": "error", "detail": f"voice: {e}"}
 

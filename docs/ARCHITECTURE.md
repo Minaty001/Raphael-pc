@@ -216,10 +216,18 @@ is real and tested. The following are tracked honestly so the UI never over-clai
 - API-created tasks execute real work (tool-backed / reminder), not a fake `sleep`.
 - Health monitor reports truthful `listening` vs `connected`.
 
-**Maturing (P1/P2 roadmap):**
-- Streaming LLM + STT pipelines (currently buffered).
-- True embedding-based vector memory (the vector store currently uses bag-of-words similarity).
-- Richer autonomous planning/execution (plans exist as data structures; execution loop is partial).
-- Real browser automation (current browser tools open URLs / run searches).
-- Multimodal screen OCR / vision understanding.
-- Per-task CPU/RAM enforcement and universally resumable checkpoints.
+**Implemented with optional runtime dependencies:**
+- Streaming LLM (Ollama NDJSON and OpenAI-compatible SSE) and incremental Vosk STT are implemented.
+- Vector memory uses local dense hashing embeddings and can upgrade to sentence-transformers.
+- The reasoning engine executes and verifies ordered plans, with one retry and honest failure reporting.
+- Screen capture includes a dependency-free pixel-analysis fallback; install Tesseract plus
+  `pytesseract` for readable OCR text.
+- Browser navigation, click, fill, and extraction use Playwright when installed; without it the
+  tools return an explicit unavailable result rather than claiming success.
+
+**External prerequisites / remaining limitations:**
+- Native voice needs a detected input device, `sounddevice`, `vosk`, and a downloaded Vosk model
+  configured through `VOSK_MODEL_PATH`. The health API reports a degraded/unavailable status when
+  any prerequisite is absent.
+- Edge TTS requires network access; local `pyttsx3` remains an optional fallback.
+- Per-task CPU/RAM enforcement and universally resumable checkpoints remain future work.

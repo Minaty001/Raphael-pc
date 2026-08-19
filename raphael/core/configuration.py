@@ -84,15 +84,19 @@ class LLMConfig:
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
-    # Free-tier Groq models (default + alternates for the Settings UI).
+    # Curated list of Groq *free-tier* models for the Settings UI. These are
+    # the models Groq offers at $0 (rate-limited) as of 2025. If you set a
+    # GROQ_API_KEY, the UI also lets you type any model id directly (the key
+    # gates the real API call), so this list is a convenience, not a hard wall.
     groq_model: str = "llama-3.3-70b-versatile"  # free
     groq_free_models: List[str] = field(default_factory=lambda: [
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "llama3-70b-8192",
-        "llama3-8b-8192",
+        "llama-3.2-11b-vision-preview",
+        "llama-3.2-90b-vision-preview",
+        "llama-3.2-1b-preview",
+        "llama-3.2-3b-preview",
         "gemma2-9b-it",
-        "mixtral-8x7b-32768",
     ])
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = "gpt-4o-mini"
@@ -290,7 +294,15 @@ class RaphaelConfig:
                     existing = json.load(fh)
             except Exception:
                 existing = {}
-        existing.update(updates)
+        # Configuration updates are normally partial nested dictionaries, e.g.
+        # ``{"llm": {"primary_provider": "openai"}}``.  A shallow update
+        # would replace the whole persisted ``llm`` section and silently lose
+        # earlier choices such as the selected model on the next restart.
+        for key, value in updates.items():
+            if isinstance(value, dict) and isinstance(existing.get(key), dict):
+                existing[key].update(value)
+            else:
+                existing[key] = value
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(existing, fh, indent=2)
 
