@@ -81,6 +81,32 @@ def test_proactive_engine_schedules_and_budgets():
     asyncio.run(_run())
 
 
+def test_proactive_engine_uses_real_working_memory_context():
+    """The proactive engine must read active_app from a working-memory style
+    summary (recent_screen is a dict), not just a hardcoded empty context."""
+    async def _run():
+        from raphael.proactive.proactive_engine import get_proactive_engine
+        from raphael.brain.open_loops import get_open_loop_tracker
+        from raphael.runtime.health_monitor import get_health_monitor
+        from raphael.core.resource_manager import get_resource_manager
+        hm = get_health_monitor()
+        for c in ("core", "voice", "wakeword", "scheduler", "memory", "websocket", "llm"):
+            hm.register(c, "ok")
+        get_resource_manager()._background_paused = False
+        get_open_loop_tracker().create_loop("finish the report", 0.9)
+        eng = get_proactive_engine()
+        eng.last_proactive_time = 0
+        eng.proactive_count_this_hour = 0
+        eng.config.proactive.max_interruptions_per_hour = 1
+        # Working-memory summary shape: recent_screen is a dict with active_app.
+        ctx = {"recent_screen": {"active_app": "code", "window_title": "report.md"}}
+        res = await eng.evaluate_proactive_opportunity(ctx)
+        assert res is not None
+        assert "report" in res["text"]
+
+    asyncio.run(_run())
+
+
 def test_background_intelligence_engine_starts():
     async def _run():
         from raphael.runtime.background_intelligence import get_background_intelligence

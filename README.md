@@ -143,8 +143,11 @@ honestly below so the UI never over-claims what the brain can do.
   colour) as the always-available fallback so perception always has a factual signal.
   The `read_screen` tool surfaces this to the agent loop. Install `tesseract` +
   `pip install pytesseract` for full text extraction.
-- Real browser *automation* (DOM interaction beyond launching a URL/search) and
-  broader proactive-intelligence tuning remain open.
+- Real browser *automation* (DOM interaction beyond launching a URL/search) remains open.
+- Proactive intelligence is wired and now data-driven: the scheduled proactive engine
+  consumes the real working-memory summary (live perception `recent_screen`) instead of a
+  hardcoded empty context, so suggestions reflect actual on-screen activity. Open-loop
+  follow-ups + hourly interruption budgets are tested.
 
 See the in-repo audit notes for the full prioritized roadmap.
 

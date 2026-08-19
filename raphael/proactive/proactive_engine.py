@@ -57,7 +57,11 @@ class ProactiveEngine:
             return None
 
         open_loops = get_open_loop_tracker().list_open_loops()
-        active_app = context_summary.get("recent_screen", {}).get("active_app", "")
+        active_app = context_summary.get("recent_screen", {})
+        if isinstance(active_app, dict):
+            active_app = active_app.get("active_app", "")
+        else:
+            active_app = ""
 
         if open_loops:
             top_loop = open_loops[0]
@@ -94,11 +98,14 @@ class ProactiveEngine:
             self._task = None
 
     async def _loop(self):
+        from raphael.memory.working_memory import get_working_memory
         while self._running:
             try:
                 await asyncio.sleep(self._interval_s)
-                # Cheap context probe (no LLM): just open loops + health.
-                ctx = {"recent_screen": {}}
+                # Real context probe: use the working-memory summary the
+                # cognitive loop populates with live perception (recent_screen),
+                # instead of a hardcoded empty context (Section 14/40).
+                ctx = get_working_memory().get_summary()
                 await self.evaluate_proactive_opportunity(ctx)
             except asyncio.CancelledError:
                 break
