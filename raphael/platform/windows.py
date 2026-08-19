@@ -149,3 +149,38 @@ class WindowsPlatformAdapter(PlatformAdapter):
         except Exception as e:
             duration = (time.time() - start_time) * 1000
             return make_action_result("launch_browser", "failed", duration, error=str(e))
+
+    def is_process_running(self, name: str) -> bool:
+        clean = name.lower().strip()
+        exe_name = WIN_APP_MAP.get(clean, clean)
+        if not exe_name.endswith(".exe"):
+            exe_name += ".exe"
+        try:
+            res = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {exe_name}"],
+                capture_output=True, text=True,
+            )
+            return exe_name.lower() in res.stdout.lower()
+        except Exception:
+            return False
+
+    def get_foreground_window(self) -> Dict[str, Any]:
+        try:
+            ps_script = (
+                "Add-Type @'\\n"
+                "using System; using System.Runtime.InteropServices;\\n"
+                "public class W { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); "
+                "[DllImport(\"user32.dll\")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n); }\\n"
+                "@'\\n"
+                "$h = [W]::GetForegroundWindow(); "
+                "$sb = New-Object System.Text.StringBuilder 256; "
+                "[void][W]::GetWindowText($h, $sb, 256); "
+                "Write-Output $sb.ToString()"
+            )
+            res = subprocess.run(
+                ["powershell", "-Command", ps_script], capture_output=True, text=True
+            )
+            title = res.stdout.strip()
+            return {"title": title or None, "app_name": None}
+        except Exception:
+            return {"title": None, "app_name": None}

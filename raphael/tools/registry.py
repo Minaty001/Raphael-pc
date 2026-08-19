@@ -67,6 +67,23 @@ class Tool:
             else:
                 res = make_action_result(self.name, "success", duration, result=result)
 
+            # ROADMAP L10: verify the action against real system state so we
+            # never report a false-positive success.
+            try:
+                from raphael.brain.action_verifier import get_action_verifier
+                verification = await get_action_verifier().verify_action(
+                    self.name, kwargs, res
+                )
+                res["verification"] = verification
+                # If verification failed, downgrade the reported status so the
+                # caller/LLM knows the intended outcome was NOT confirmed.
+                if verification.get("verified") is False:
+                    res["status"] = "unverified"
+                    res["error"] = verification.get("reason")
+            except Exception as ve:
+                logger.warning(f"Verification error for '{self.name}': {ve}")
+                res["verification"] = {"verified": None, "reason": "verification skipped"}
+
             get_audit_logger().log_action(self.name, kwargs, self.risk_level.value, res.get("status", "success"), user_request, intent, result=res.get("result"), error=res.get("error"), duration_ms=duration)
             await bus.publish("tool.completed", res, source="tool_registry")
             return res

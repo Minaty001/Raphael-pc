@@ -66,3 +66,21 @@ class PlatformAdapter(ABC):
     @abstractmethod
     def launch_browser(self, url: str) -> Dict[str, Any]:
         pass
+
+    @abstractmethod
+    def is_process_running(self, name: str) -> bool:
+        """Return True if a process matching `name` is currently running.
+
+        Used by the ActionVerifier to confirm an application actually launched
+        (or, negated, that it actually closed) rather than trusting the
+        launcher's own return code.
+        """
+        pass
+
+    @abstractmethod
+    def get_foreground_window(self) -> Dict[str, Any]:
+        """Return the currently focused window/app (for verification + context).
+
+        Result shape: {"title": str, "app_name": str} or {"title": None}.
+        """
+        pass

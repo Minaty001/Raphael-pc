@@ -128,6 +128,7 @@ honestly below so the UI never over-claims what the brain can do.
 - ✅ Task scheduler no longer blocks on dependency waits; dependent tasks re-enqueue and wake on completion.
 - ✅ API-created tasks execute real work (tool-backed / reminder) instead of a fake `sleep`.
 - ✅ Health monitor reports truthful `"listening"` vs `"connected"` for the WebSocket.
+- ✅ Action verification is now real (ROADMAP L10): `open_application`/`close_application` are confirmed against actual process state via `is_process_running`, and unconfirmed actions are reported as `"unverified"` instead of falsely `"success"`.
 
 **Known gaps being addressed (P1/P2):**
 - Streaming LLM + STT pipelines (currently buffered), true embedding-based vector memory,

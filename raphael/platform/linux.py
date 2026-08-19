@@ -192,3 +192,44 @@ class LinuxPlatformAdapter(PlatformAdapter):
         except Exception as e:
             duration = (time.time() - start_time) * 1000
             return make_action_result("launch_browser", "failed", duration, error=str(e))
+
+    def is_process_running(self, name: str) -> bool:
+        clean = name.lower().strip()
+        candidates = APP_MAP.get(clean, [clean])
+        try:
+            res = subprocess.run(
+                ["pgrep", "-f", candidates[0]], capture_output=True, text=True
+            )
+            return res.returncode == 0 and bool(res.stdout.strip())
+        except Exception:
+            # Fallback: scan process list via ps
+            try:
+                res = subprocess.run(
+                    ["ps", "-eo", "comm"], capture_output=True, text=True
+                )
+                procs = [p.strip().lower() for p in res.stdout.splitlines()]
+                return any(c in p for c in candidates for p in procs)
+            except Exception:
+                return False
+
+    def get_foreground_window(self) -> Dict[str, Any]:
+        # Best-effort: xdotool gives the active window's PID/name on X11.
+        try:
+            if shutil.which("xdotool"):
+                out = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowpid"],
+                    capture_output=True, text=True,
+                )
+                pid = out.stdout.strip()
+                if pid.isdigit():
+                    # Resolve the process name from /proc
+                    cmdline = ""
+                    try:
+                        with open(f"/proc/{pid}/comm") as f:
+                            cmdline = f.read().strip()
+                    except Exception:
+                        pass
+                    return {"title": None, "app_name": cmdline or None}
+        except Exception:
+            pass
+        return {"title": None, "app_name": None}
