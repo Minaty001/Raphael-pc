@@ -93,6 +93,17 @@ export interface ToolItem {
   parameters: string[];
 }
 
+export interface ToolExecutionRecord {
+  id?: string;
+  action: string;
+  status: "started" | "running" | "success" | "failed" | "denied" | "unverified";
+  timestamp?: number;
+  args?: Record<string, any>;
+  result?: any;
+  error?: string;
+  duration_ms?: number;
+}
+
 export interface SecurityConfirmationRequest {
   request_id: string;
   tool_name: string;

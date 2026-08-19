@@ -27,3 +27,8 @@ vosk==0.3.45
 #   schedule        - task scheduler helpers
 #   numpy / scikit-learn - embeddings / learning loop
 #   pvporcupine     - low-latency wake-word KWS (alternative to transcript path)
+#   playwright      - real browser DOM automation (browser_navigate/click/fill/
+#                     extract tools). Install with: pip install playwright &&
+#                     playwright install chromium. Without it, read_webpage still
+#                     works (stdlib) and the DOM tools return an honest
+#                     "engine not available" result.

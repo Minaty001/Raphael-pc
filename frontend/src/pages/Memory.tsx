@@ -23,7 +23,7 @@ export const Memory: React.FC<MemoryProps> = ({ onForgetMemory }) => {
     { id: 4, type: "RULE", content: "High-risk tool execution requires explicit user confirmation.", confidence: 1.0, evidence: 100 }
   ];
 
-  const handleForgetClick = (content: str) => {
+  const handleForgetClick = (content: string) => {
     onForgetMemory(content);
   };
 

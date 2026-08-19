@@ -61,7 +61,7 @@ export const DeveloperConsole: React.FC<Props> = ({ events, tools, memories }) =
           ) : (
             events.slice().reverse().map((ev, i) => (
               <div key={i} className="flex items-start gap-2 border-b border-slate-900 pb-1">
-                <span className="text-slate-600 font-bold">{new Date(ev.timestamp * 1000).toLocaleTimeString()}</span>
+                <span className="text-slate-600 font-bold">{ev.timestamp ? new Date(ev.timestamp * 1000).toLocaleTimeString() : "--:--:--"}</span>
                 <span className="text-cyan-400 font-semibold">{ev.type}</span>
                 <span className="text-slate-400 truncate">{JSON.stringify(ev)}</span>
               </div>

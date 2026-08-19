@@ -129,7 +129,7 @@ export const App: React.FC = () => {
         setState(rawState);
         if (event.metrics) setMetrics(event.metrics);
       } else if (event.type === "system.metrics") {
-        setMetrics(event);
+        if (event.metrics) setMetrics(event.metrics);
       } else if (event.type === "assistant.response" || event.type === "assistant.message") {
         const textToSpeak = event.text || event.message;
         setMessages((prev) => [
