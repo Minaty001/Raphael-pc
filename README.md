@@ -131,10 +131,12 @@ honestly below so the UI never over-claims what the brain can do.
 - ✅ Action verification is now real (ROADMAP L10): `open_application`/`close_application` are confirmed against actual process state via `is_process_running`, and unconfirmed actions are reported as `"unverified"` instead of falsely `"success"`.
 - ✅ Memory is now genuinely vector-based (audit #12/#13/#14): `vector_store.py` uses real dense embeddings (offline `LocalHashingEmbedding`, auto-upgrades to sentence-transformers if installed) instead of bag-of-words; `hybrid_retrieve` unifies episodic + semantic + user-model + vector hits into one ranked list scored by semantic similarity + importance + recency + confidence.
 - ✅ Agent loop now executes multi-step plans (audit #8 / ROADMAP L11): `ReasoningEngine.execute_plan` runs plan steps in order, verifies each via the real `ActionVerifier`, retries once on failure, and aborts with an honest report (no silent partial success) when a step can't be confirmed.
+- ✅ Real LLM streaming (audit #19 / ROADMAP Phase 4): `llm_router` now performs genuine chunked HTTP streaming (Ollama NDJSON, OpenAI-compatible SSE for Groq/OpenRouter) yielding tokens as they arrive — no more fake word-split replay of a buffered response; `chat()` is derived from `stream()`.
 
 **Known gaps being addressed (P1/P2):**
-- Streaming LLM + STT pipelines (currently buffered), richer autonomous
-  planning/execution, real browser automation, and multimodal screen OCR.
+- Streaming STT (currently buffered), richer LLM-driven autonomous
+  planning (planner is pattern-matched, not model-generated), real browser
+  automation, and multimodal screen OCR.
 
 See the in-repo audit notes for the full prioritized roadmap.
 
