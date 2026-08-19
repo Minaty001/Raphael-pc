@@ -15,10 +15,15 @@ edge-tts==7.2.7
 python-multipart==0.0.32
 pydantic-core==2.46.4
 
-# Optional (enable voice / wake-word / vision when available on your system):
-#   vosk            - offline wake-word + STT
-#   sounddevice     - microphone capture
+# Voice capture + offline wake-word/STT (core "Always-Alive" features, not optional).
+# Note: `vosk` needs a downloaded model — set VOSK_MODEL_PATH (see README). The
+# provider degrades to a clear warning if the model folder is missing.
+sounddevice==0.5.1
+vosk==0.3.45
+
+# Optional (enable when available on your system):
 #   pyttsx3         - offline TTS fallback
 #   pystray         - system tray icon (RaphaelTray)
 #   schedule        - task scheduler helpers
 #   numpy / scikit-learn - embeddings / learning loop
+#   pvporcupine     - low-latency wake-word KWS (alternative to transcript path)

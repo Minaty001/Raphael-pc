@@ -69,8 +69,8 @@ class VoiceConfig:
         "rafel", "hey rafel", "rafeal", "rapheal", "rafal"
     ])
     sensitivity: float = 0.5
-    stt_provider: str = "web"  # web (browser Web Speech), vosk, whisper, mock
-    tts_provider: str = "web"  # web (client-side playback), edge, pyttsx3, mock
+    stt_provider: str = "vosk"  # vosk (offline, default), whisper, web (browser), mock
+    tts_provider: str = "edge"  # edge (server playback, default), web (client-side), pyttsx3, mock
     vad_enabled: bool = True
     sample_rate: int = 16000
     preferred_device: str = ""  # Substring match to force a specific mic (e.g. "AirPods"); empty = auto-detect

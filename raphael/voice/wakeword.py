@@ -7,7 +7,9 @@ Key capabilities:
   * Provider abstraction: pluggable wake-word engines.
       - PorcupineProvider  -> real on-device KWS (picovoice) when installed.
       - TranscriptWakeProvider -> lightweight phrase match on finalized STT
-        segments (works with zero extra models; the default).
+        segments (works with zero extra models; used whenever no audio KWS
+        engine is available). The mic/STT path is pre-initialized so detection
+        latency stays low.
   * Audio ring buffer (Section 13): keeps the last N ms of *audio* so the
     words immediately after the wake phrase are never lost, even before STT
     catches up.
@@ -17,6 +19,12 @@ Key capabilities:
 
 Designed so the heavy STT model is only activated AFTER a wake is detected
 (Section 34): low-power listening, then full capture.
+
+IMPORTANT — production wiring: transcripts reach this detector via the voice
+pipeline (`pipeline.handle_speech_input` -> `wwd.is_wake_in_text`), which is
+fed continuously by the microphone capture loop regardless of audio state
+(see `raphael/voice/microphone.py`). The wake phrase list is sourced from
+`config.voice.wake_phrases` (single source of truth).
 """
 
 import re
@@ -32,12 +40,6 @@ from raphael.core.logging import get_logger
 from raphael.voice.audio_state import AudioState, get_audio_state_machine
 
 logger = get_logger("voice.wakeword")
-
-DEFAULT_WAKE_WORDS = [
-    "raphael", "hey raphael", "ok raphael", "hi raphael",
-    "rafael", "hey rafael", "ok rafael", "hi rafael",
-    "rafel", "hey rafel", "rafeal", "rapheal", "rafal"
-]
 
 
 class WakeWordProvider:
@@ -200,7 +202,7 @@ class AudioRingBuffer:
 class WakeWordDetector:
     def __init__(self, wake_words: Optional[List[str]] = None, buffer_seconds: float = 1.0):
         config = get_config()
-        self.wake_words = [w.lower().strip() for w in (wake_words or DEFAULT_WAKE_WORDS)]
+        self.wake_words = [w.lower().strip() for w in (wake_words or list(config.voice.wake_phrases))]
         self.enabled = config.voice.wake_word_enabled
         self._buffer_seconds = buffer_seconds or config.wakeword.rolling_buffer_seconds
         # Transcript rolling buffer (Section 13): last ~buffer_seconds of text.
