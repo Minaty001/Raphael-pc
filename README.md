@@ -130,6 +130,7 @@ honestly below so the UI never over-claims what the brain can do.
 - ✅ Health monitor reports truthful `"listening"` vs `"connected"` for the WebSocket.
 - ✅ Action verification is now real (ROADMAP L10): `open_application`/`close_application` are confirmed against actual process state via `is_process_running`, and unconfirmed actions are reported as `"unverified"` instead of falsely `"success"`.
 - ✅ Memory is now genuinely vector-based (audit #12/#13/#14): `vector_store.py` uses real dense embeddings (offline `LocalHashingEmbedding`, auto-upgrades to sentence-transformers if installed) instead of bag-of-words; `hybrid_retrieve` unifies episodic + semantic + user-model + vector hits into one ranked list scored by semantic similarity + importance + recency + confidence.
+- ✅ Agent loop now executes multi-step plans (audit #8 / ROADMAP L11): `ReasoningEngine.execute_plan` runs plan steps in order, verifies each via the real `ActionVerifier`, retries once on failure, and aborts with an honest report (no silent partial success) when a step can't be confirmed.
 
 **Known gaps being addressed (P1/P2):**
 - Streaming LLM + STT pipelines (currently buffered), richer autonomous

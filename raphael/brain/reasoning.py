@@ -4,13 +4,13 @@ Orchestrates state transitions, structured reasoning state, metacognition, inten
 """
 
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from raphael.core.state_manager import get_state_manager, AssistantState
 from raphael.core.event_bus import get_event_bus
 from raphael.core.logging import get_logger
 from raphael.brain.intent import get_intent_engine
 from raphael.brain.llm_router import get_llm_router
-from raphael.brain.planner import get_planner
+from raphael.brain.planner import get_planner, PlanStep
 from raphael.brain.meta_cognition import get_meta_cognition
 from raphael.brain.action_verifier import get_action_verifier
 from raphael.memory.memory_manager import get_memory_manager
@@ -20,6 +20,27 @@ from raphael.learning.reflection_engine import get_reflection_engine
 from raphael.tools.registry import get_tool_registry
 
 logger = get_logger("brain.reasoning")
+
+class PlanResult:
+    """Structured outcome of executing a multi-step plan (ROADMAP L11)."""
+    def __init__(self):
+        self.steps_total = 0
+        self.steps_completed = 0
+        self.steps_failed = 0
+        self.aborted = False
+        self.step_results: List[Dict[str, Any]] = []
+        self.message = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "steps_total": self.steps_total,
+            "steps_completed": self.steps_completed,
+            "steps_failed": self.steps_failed,
+            "aborted": self.aborted,
+            "step_results": self.step_results,
+            "message": self.message,
+        }
+
 
 class ReasoningEngine:
     def __init__(self):
@@ -35,6 +56,78 @@ class ReasoningEngine:
         self.learning_engine = get_learning_engine()
         self.reflection_engine = get_reflection_engine()
         self.tool_registry = get_tool_registry()
+
+    async def execute_plan(self, plan: List[PlanStep], user_request: str) -> PlanResult:
+        """Execute a plan step-by-step with per-step verification + recovery.
+
+        ROADMAP L11 Agent Loop: ACT -> OBSERVE -> VERIFY -> (RECOVER) -> next.
+        On a step failure we retry once; if it still fails the plan aborts and
+        we report honestly which steps completed and which did not (no silent
+        success).
+        """
+        result = PlanResult()
+        result.steps_total = len(plan)
+        await self.state_mgr.set_state(AssistantState.EXECUTING, {"plan_steps": len(plan)})
+
+        for step in plan:
+            step.status = "running"
+            await self.event_bus.publish({
+                "type": "plan.step.start",
+                "step_id": step.step_id,
+                "tool": step.tool_name,
+                "description": step.description,
+            })
+
+            tool_res = await self.tool_registry.execute_tool(step.tool_name, step.args or {})
+            verified = tool_res.get("verification", {}).get("verified")
+            ok = tool_res.get("status") == "success" and verified is not False
+
+            # Recovery: one retry on failure / unverified outcome.
+            if not ok:
+                logger.warning(f"Plan step {step.step_id} ({step.tool_name}) failed/Unverified; retrying once")
+                tool_res = await self.tool_registry.execute_tool(step.tool_name, step.args or {})
+                verified = tool_res.get("verification", {}).get("verified")
+                ok = tool_res.get("status") == "success" and verified is not False
+
+            step.result = tool_res
+            if ok:
+                step.status = "completed"
+                result.steps_completed += 1
+                result.step_results.append({
+                    "step_id": step.step_id, "status": "completed",
+                    "tool": step.tool_name, "result": tool_res.get("result"),
+                })
+                await self.event_bus.publish({
+                    "type": "plan.step.completed",
+                    "step_id": step.step_id, "tool": step.tool_name,
+                })
+            else:
+                step.status = "failed"
+                step.error = tool_res.get("error") or "step unverified"
+                result.steps_failed += 1
+                result.step_results.append({
+                    "step_id": step.step_id, "status": "failed",
+                    "tool": step.tool_name, "error": step.error,
+                })
+                await self.event_bus.publish({
+                    "type": "plan.step.failed",
+                    "step_id": step.step_id, "tool": step.tool_name,
+                    "error": step.error,
+                })
+                # Abort the plan on a hard failure (no silent partial success).
+                result.aborted = True
+                result.message = (
+                    f"Plan aborted at step {step.step_id} ({step.tool_name}): {step.error}. "
+                    f"{result.steps_completed}/{result.steps_total} steps completed."
+                )
+                break
+
+        if not result.aborted:
+            result.message = (
+                f"Plan completed: all {result.steps_total} steps executed successfully."
+            )
+        await self.reflection_engine.reflect_on_task("plan_execution", result.to_dict(), user_request)
+        return result
 
     async def process_user_input(self, text: str) -> Dict[str, Any]:
         """
@@ -79,11 +172,32 @@ class ReasoningEngine:
             else:
                 response_text = f"Action {tool_name} failed: {tool_result.get('error')}"
         else:
-            # Multi-step LLM Planning
+            # Multi-step intent: build a plan and EXECUTE it as a loop.
             await self.state_mgr.set_state(AssistantState.PLANNING)
             plan = self.planner.create_plan(text)
-            
-            # Chat completion via LLM Router (returns a plain string)
+
+            if plan:
+                plan_result = await self.execute_plan(plan, text)
+                response_text = plan_result.message
+                await self.state_mgr.set_state(AssistantState.SPEAKING, {"text": response_text})
+                await self.event_bus.publish({
+                    "type": "assistant.message",
+                    "text": response_text,
+                    "plan_result": plan_result.to_dict(),
+                    "timestamp": time.time(),
+                })
+                await self.state_mgr.set_state(AssistantState.IDLE)
+                return {
+                    "text": response_text,
+                    "intent": intent_res,
+                    "tool_result": None,
+                    "plan": [s.__dict__ for s in plan],
+                    "plan_result": plan_result.to_dict(),
+                    "metacognition": metacog_res,
+                    "duration_ms": (time.time() - start_time) * 1000,
+                }
+
+            # No plannable structure: use the LLM for a conversational response.
             prompt = f"User Request: {text}\nContext: {memory_context['active_context']}\nMemories: {memory_context['relevant_memories']}"
             try:
                 llm_res = await self.llm_router.chat([{"role": "user", "content": prompt}])
