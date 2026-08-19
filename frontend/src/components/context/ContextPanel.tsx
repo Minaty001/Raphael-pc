@@ -1,6 +1,6 @@
 import React from "react";
 import { PageView } from "../../types";
-import { Eye, Target, Sparkles, ChevronRight, AlertTriangle, Layers, ChevronLeft } from "lucide-react";
+import { Eye, Target, Sparkles, ChevronRight, Layers, ChevronLeft } from "lucide-react";
 
 interface ContextPanelProps {
   context: {
@@ -11,20 +11,15 @@ interface ContextPanelProps {
     activeGoal?: string;
     confidence?: number;
   };
+  memoryCount?: number;
   onNavigate: (page: PageView) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
 }
 
-const MemoryItem: React.FC<{ text: string }> = ({ text }) => (
-  <li className="flex items-start gap-1.5 text-[11px] text-[var(--text-secondary)]">
-    <span className="text-[var(--success)] mt-0.5">•</span>
-    <span>{text}</span>
-  </li>
-);
-
 export const ContextPanel: React.FC<ContextPanelProps> = ({
   context,
+  memoryCount,
   onNavigate,
   collapsed,
   onToggleCollapse,
@@ -65,20 +60,18 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
           <span className="flex items-center gap-1.5">
             <Eye className="w-3.5 h-3.5" /> SCREEN
           </span>
-          <span className="text-[var(--success)]">{confidence}%</span>
+          {context.confidence != null && (
+            <span className="text-[var(--success)]">{Math.round(context.confidence * 100)}%</span>
+          )}
         </div>
         <div className="space-y-1 text-[11px]">
           <div>
-            APP: <span className="text-white font-semibold">{context.application || "VS Code"}</span>
+            APP: <span className="text-white font-semibold">{context.application || "—"}</span>
           </div>
-          <div className="truncate text-[var(--text-secondary)]">WIN: {context.window || "Raphael Project Workspace"}</div>
+          <div className="truncate text-[var(--text-secondary)]">WIN: {context.window || "—"}</div>
           <div>
-            ACT: <span className="text-[var(--accent-primary)]">{context.activity || "Python Development"}</span>
+            ACT: <span className="text-[var(--accent-primary)]">{context.activity || "—"}</span>
           </div>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] text-[var(--warning)] pt-1 border-t border-[var(--border)]">
-          <AlertTriangle className="w-3 h-3" />
-          <span>Analyzed 2.1s ago</span>
         </div>
       </div>
 
@@ -88,26 +81,28 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
           <Target className="w-3.5 h-3.5" /> ACTIVE GOAL
         </div>
         <p className="text-[12px] text-white font-semibold leading-snug">
-          {context.activeGoal || "Cognitive Memory & Vision System"}
+          {context.activeGoal || "No active goal"}
         </p>
-        <p className="text-[10px] text-[var(--text-secondary)]">Project: {context.project || "Raphael v3"}</p>
+        {context.project && (
+          <p className="text-[10px] text-[var(--text-secondary)]">Project: {context.project}</p>
+        )}
       </div>
 
       {/* Relevant Memory */}
       <div className="hud-card p-3 space-y-2">
-        <div className="flex items-center gap-1.5 text-[10px] text-[var(--success)] font-bold">
-          <Sparkles className="w-3.5 h-3.5" /> MEMORY
+        <div className="flex items-center justify-between text-[10px] text-[var(--success)] font-bold">
+          <span className="flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" /> MEMORY
+          </span>
+          <span className="text-[var(--text-muted)] font-normal">
+            {memoryCount != null ? `${memoryCount} stored` : ""}
+          </span>
         </div>
-        <ul className="space-y-1">
-          <MemoryItem text="User prefers local models." />
-          <MemoryItem text='Wake word: "Raphael"' />
-          <MemoryItem text="Resource mode: BALANCED" />
-        </ul>
         <button
           onClick={() => onNavigate("memory")}
-          className="text-[10px] text-[var(--accent-primary)] hover:underline block pt-1 w-full text-left"
+          className="text-[10px] text-[var(--accent-primary)] hover:underline block w-full text-left"
         >
-          View all 12,842 memories →
+          View all memories →
         </button>
       </div>
     </aside>

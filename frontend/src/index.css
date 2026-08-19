@@ -42,6 +42,20 @@ body {
     border-color: rgba(86, 217, 255, 0.3);
   }
 
+  /* glass-panel: the card surface used across pages (was referenced but never
+     defined, so panels rendered as bare padding). Reuses the hud-card surface. */
+  .glass-panel {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    transition: border-color var(--transition-normal);
+  }
+  .glass-panel:hover {
+    border-color: rgba(86, 217, 255, 0.3);
+  }
+
   .hud-header {
     display: flex;
     align-items: center;

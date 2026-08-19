@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { CharacterStage } from "../components/character/CharacterStage";
 import { ChatMessage, RaphaelStateType, PageView, SystemMetrics } from "../types";
 import { Bot, User, Sparkles, ArrowRight, Cpu, Brain, Eye, Wrench, MessageSquare, Activity } from "lucide-react";
+import { wsClient } from "../websocket";
 
 interface HomeProps {
   state: RaphaelStateType;
@@ -9,6 +10,7 @@ interface HomeProps {
   metrics: SystemMetrics | null;
   onSendMessage: (text: string) => void;
   onNavigate: (page: PageView) => void;
+  onRefresh?: () => void;
 }
 
 const STATE_HINT: Record<string, string> = {
@@ -42,6 +44,11 @@ export const Home: React.FC<HomeProps> = ({ state, messages, metrics, onSendMess
   const disk = metrics?.disk_percent ?? 18;
   const recent = messages.slice(-4);
 
+  const [openLoops, setOpenLoops] = useState<any[]>([]);
+  useEffect(() => {
+    wsClient.rest<any[]>("/api/brain/open-loops").then((data) => data && setOpenLoops(data)).catch(() => {});
+  }, []);
+
   const handleQuick = (text: string) => onSendMessage(text);
 
   return (
@@ -74,33 +81,41 @@ export const Home: React.FC<HomeProps> = ({ state, messages, metrics, onSendMess
             <StatPill label="Messages" value={`${messages.length}`} />
             <div className="flex-1 min-w-[160px] hud-card px-4 py-3 flex flex-col gap-1">
               <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Open Loops</span>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-display font-bold text-[var(--warning)]">1</span>
-                <span className="text-[11px] text-[var(--text-secondary)] truncate">WebSocket reconnect test</span>
-                <button
-                  onClick={() => onNavigate("goals")}
-                  className="ml-auto text-[10px] text-[var(--accent-primary)] hover:underline flex items-center gap-1"
-                >
-                  VIEW <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
+              {openLoops.length === 0 ? (
+                <span className="text-lg font-display font-bold text-[var(--text-secondary)]">0</span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-display font-bold text-[var(--warning)]">{openLoops.length}</span>
+                  <span className="text-[11px] text-[var(--text-secondary)] truncate">
+                    {openLoops[0].title || openLoops[0].description || "Open task"}
+                  </span>
+                  <button
+                    onClick={() => onNavigate("goals")}
+                    className="ml-auto text-[10px] text-[var(--accent-primary)] hover:underline flex items-center gap-1"
+                  >
+                    VIEW <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Proactive initiative banner */}
-          <div className="hud-card p-3 flex items-center justify-between font-mono text-xs text-[var(--warning)]">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[var(--warning)] shrink-0" />
-              <span>RAPHAEL INITIATIVE: 1 open loop detected for WebSocket reconnect test.</span>
+          {/* Proactive initiative banner (real open loops only) */}
+          {openLoops.length > 0 && (
+            <div className="hud-card p-3 flex items-center justify-between font-mono text-xs text-[var(--warning)]">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[var(--warning)] shrink-0" />
+                <span>RAPHAEL INITIATIVE: {openLoops.length} open loop{openLoops.length > 1 ? "s" : ""} detected.</span>
+              </div>
+              <button
+                onClick={() => onNavigate("goals")}
+                className="text-[10px] text-[var(--accent-primary)] hover:underline flex items-center gap-1 shrink-0"
+              >
+                <span>GOALS</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
-            <button
-              onClick={() => onNavigate("goals")}
-              className="text-[10px] text-[var(--accent-primary)] hover:underline flex items-center gap-1 shrink-0"
-            >
-              <span>GOALS</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
+          )}
 
           {/* Quick actions */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

@@ -76,42 +76,26 @@ export const App: React.FC = () => {
   const [availableTools, setAvailableTools] = useState<any[]>([]);
   const [memories, setMemories] = useState<any[]>([]);
 
-  const [contextData, setContextData] = useState<any>({
-    application: "VS Code",
-    window: "Raphael Workspace",
-    activity: "Python Development",
-    project: "Raphael v3",
-    activeGoal: "Cognitive Memory & Vision System",
-    confidence: 0.94
-  });
+  const [contextData, setContextData] = useState<any>({});
 
   const fetchBrainData = () => {
-    fetch("http://localhost:8765/api/brain/context")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.recent_screen) {
-          setContextData((prev: any) => ({
-            ...prev,
-            application: data.recent_screen.active_app || prev.application,
-            window: data.recent_screen.window_title || prev.window,
-            activity: data.recent_screen.activity || prev.activity
-          }));
-        }
-        if (data.active_goal) {
-          setContextData((prev: any) => ({ ...prev, activeGoal: data.active_goal }));
-        }
-      })
-      .catch(() => {});
+    wsClient.rest<any>("/api/brain/context").then((data) => {
+      if (!data) return;
+      if (data.recent_screen) {
+        setContextData((prev: any) => ({
+          ...prev,
+          application: data.recent_screen.active_app || prev.application,
+          window: data.recent_screen.window_title || prev.window,
+          activity: data.recent_screen.activity || prev.activity
+        }));
+      }
+      if (data.active_goal) {
+        setContextData((prev: any) => ({ ...prev, activeGoal: data.active_goal }));
+      }
+    }).catch(() => {});
 
-    fetch("http://localhost:8765/api/tools")
-      .then((res) => res.json())
-      .then((data) => setAvailableTools(data))
-      .catch(() => {});
-
-    fetch("http://localhost:8765/api/memories")
-      .then((res) => res.json())
-      .then((data) => setMemories(data))
-      .catch(() => {});
+    wsClient.rest<any>("/api/tools").then((data) => data && setAvailableTools(data)).catch(() => {});
+    wsClient.rest<any>("/api/memories").then((data) => data && setMemories(data)).catch(() => {});
 
     // Always-Alive runtime: pull health + task list on each refresh (Sections 65-71).
     wsClient.fetchRuntimeHealth().then((h) => h && setHealth(h));
@@ -416,12 +400,7 @@ export const App: React.FC = () => {
   };
 
   const handleForgetMemory = (keyword: string) => {
-    fetch("http://localhost:8765/api/brain/forget", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword })
-    })
-      .then((res) => res.json())
+    wsClient.rest("/api/brain/forget", "POST", { keyword })
       .then(() => fetchBrainData())
       .catch(() => {});
   };
@@ -499,6 +478,7 @@ export const App: React.FC = () => {
         {/* Right Collapsible Context Panel */}
         <ContextPanel
           context={contextData}
+          memoryCount={memories?.length ?? null}
           onNavigate={setCurrentPage}
           collapsed={contextCollapsed}
           onToggleCollapse={() => setContextCollapsed(!contextCollapsed)}
