@@ -23,6 +23,7 @@ and performs permitted background work **without blocking** your desktop interac
 - [Architecture](#-architecture)
 - [Project Status](#-project-status)
 - [Prerequisites](#-prerequisites)
+- [Environment & API Keys (.env)](#-environment--api-keys-env)
 - [Quick Start](#-quick-start-localhost)
 - [Diagnostics & Testing](#-diagnostics--testing)
 - [WebSocket & REST API](#-websocket--rest-api-reference)
@@ -150,6 +151,84 @@ See the in-repo audit notes for the full prioritized roadmap.
 - **Git**
 - A running LLM endpoint (Ollama recommended; Groq/OpenAI/Anthropic also supported via the LLM router)
 - Optional: microphone + speakers for voice interaction; `pystray` + `Pillow` for the system tray icon
+
+---
+
+## 🔐 Environment & API Keys (`.env`)
+
+All secrets live in a single **`.env` file at the repository root**. It is
+**already git-ignored** (see `.gitignore`), so keys never get committed. The
+loader (`raphael/core/configuration.py`) reads it automatically on startup —
+no extra steps needed beyond creating the file.
+
+### How to create it
+
+```bash
+cd Raphael-pc
+
+# Create an empty .env, then paste your keys (editor or heredoc)
+touch .env
+cat > .env <<'EOF'
+GROQ_API_KEY=gsk_xxxYourKeyHere
+EOF
+```
+
+> 💡 You only need to set the keys for the providers you actually use.
+> Everything else falls back to safe defaults (offline/mock) so the runtime
+> still boots without any key.
+
+### Available variables
+
+| Variable | What it's for | Required? | Where it's read |
+|---|---|---|---|
+| `GROQ_API_KEY` | Groq LLM (free models, default primary provider) | Recommended* | `configuration.py` |
+| `OPENROUTER_API_KEY` | OpenRouter LLM (Meta/Anthropic/etc.) | Optional | `configuration.py` |
+| `OPENAI_API_KEY` | OpenAI-compatible LLM / Whisper | Optional | `configuration.py` |
+| `VOSK_MODEL_PATH` | Path to offline Vosk STT model folder | Optional** | `raphael/voice/stt.py` |
+| `PORCUPINE_ACCESS_KEY` | Picovoice Porcupine wake-word KWS | Optional | `raphael/voice/wakeword.py` |
+| `RAPHAEL_WS_HOST` | Override WebSocket bind host (default `127.0.0.1`) | Optional | `runtime_launcher.py` |
+| `RAPHAEL_WS_PORT` | Override WebSocket port (default `8765`) | Optional | `runtime_launcher.py` |
+
+\* Groq is the default `primary_provider`. Without a valid key the LLM-backed
+chat/planner falls back to `mock` (the runtime still runs, tools still work).
+\** Vosk is the default offline STT. Download a small model, e.g.
+`vosk-model-small-en-us-0.15`, extract it, and point `VOSK_MODEL_PATH` at the
+folder:
+
+```bash
+# example: after unzipping the model next to the repo
+export VOSK_MODEL_PATH="$PWD/vosk-model-small-en-us-0.15"
+# or put the same line inside .env:
+# VOSK_MODEL_PATH=/absolute/path/to/vosk-model-small-en-us-0.15
+```
+
+### Example `.env`
+
+```env
+# --- LLM (pick at least one) ---
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxx
+# OPENROUTER_API_KEY=sk-or-xxxxxxxx
+# OPENAI_API_KEY=sk-xxxxxxxx
+
+# --- Offline speech-to-text (Vosk) ---
+VOSK_MODEL_PATH=/home/youruser/models/vosk-model-small-en-us-0.15
+
+# --- Optional: low-latency wake-word engine (Picovoice) ---
+# PORCUPINE_ACCESS_KEY=your-picovoice-key
+
+# --- Runtime bind (usually leave default) ---
+# RAPHAEL_WS_HOST=127.0.0.1
+# RAPHAEL_WS_PORT=8765
+```
+
+### WebSocket auth token
+
+The gateway is **auth-gated**. By default it accepts loopback connections
+(`127.0.0.1`/`localhost`) without a token, and ships with a placeholder token
+for non-loopback use. **For any non-localhost exposure, rotate it** — set it in
+`~/.raphael/config.override.json` (the runtime writes a random one on first
+run) or pass `?token=<your_token>` from the client. Never reuse the committed
+placeholder in production.
 
 ---
 
