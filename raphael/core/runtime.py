@@ -47,6 +47,7 @@ class RaphaelRuntime:
         import raphael.tools.browser
         import raphael.tools.developer
         import raphael.tools.media
+        import raphael.tools.screen
 
         tools = get_tool_registry().list_tools()
         logger.info(f"PHASE 3: Registered {len(tools)} tools")

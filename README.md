@@ -137,8 +137,14 @@ honestly below so the UI never over-claims what the brain can do.
 - ✅ LLM-driven planner (ROADMAP L8): `Planner.create_plan` keeps fast deterministic pattern matches for common requests and now falls back to LLM decomposition (using the live tool registry) for novel multi-step tasks; invalid tool names are dropped and any LLM failure degrades gracefully to an empty plan. Pairs with the already-wired `ReasoningEngine.execute_plan` agent loop.
 
 **Known gaps being addressed (P1/P2):**
-- Real browser automation and multimodal screen OCR (currently limited
-  perception), and broader proactive-intelligence tuning.
+- Multimodal screen OCR is now wired (ROADMAP Phase 6): `ScreenObserver.get_visual_state`
+  captures a screenshot and runs real OCR via `tesseract`/`pytesseract` when installed,
+  with a dependency-free offline pixel analyzer (brightness / ink-coverage / dominant
+  colour) as the always-available fallback so perception always has a factual signal.
+  The `read_screen` tool surfaces this to the agent loop. Install `tesseract` +
+  `pip install pytesseract` for full text extraction.
+- Real browser *automation* (DOM interaction beyond launching a URL/search) and
+  broader proactive-intelligence tuning remain open.
 
 See the in-repo audit notes for the full prioritized roadmap.
 

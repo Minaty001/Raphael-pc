@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, List
 from raphael.platform.factory import get_platform_adapter
 from raphael.core.configuration import get_config
 from raphael.core.logging import get_logger
+from raphael.perception.ocr import get_ocr_provider
 
 logger = get_logger("perception.screen")
 
@@ -85,16 +86,45 @@ class ScreenObserver:
 
     def get_visual_state(self) -> Dict[str, Any]:
         """
-        Takes screenshot when structural info is insufficient or explicitly requested.
+        Captures a screenshot and extracts real on-screen content (OCR) so
+        perception knows WHAT is on screen, not just which app owns the window.
+        Degrades gracefully when no OCR engine is installed.
         """
         adapter = get_platform_adapter()
         shot_res = adapter.take_screenshot()
         structural = self.get_structural_state()
 
+        ocr = {"provider": "offline", "engine_available": False, "text": "",
+               "word_count": 0, "note": "OCR not run"}
+        screenshot_path = shot_res.get("result", {}).get("file_path") if isinstance(shot_res, dict) else None
+        if screenshot_path and os.path.isfile(screenshot_path):
+            try:
+                ocr = get_ocr_provider().extract_text(screenshot_path)
+            except Exception as e:  # never let OCR break perception
+                logger.warning(f"OCR extraction failed: {e}")
+                ocr = {"provider": "offline", "engine_available": False,
+                       "text": "", "word_count": 0, "note": f"OCR error: {e}"}
+
+        ocr_text = (ocr.get("text") or "").strip()
+        if ocr.get("engine_available") and ocr_text:
+            visual_summary = (
+                f"User is in '{structural['active_app']}' "
+                f"({structural['window_title']}). On-screen text detected "
+                f"({ocr.get('word_count', 0)} words): {ocr_text[:280]}"
+            )
+        else:
+            visual_summary = (
+                f"User is interacting with '{structural['active_app']}' "
+                f"(Window: '{structural['window_title']}'). "
+                f"Activity: {structural['detected_activity']}. "
+                f"[OCR engine not available: {ocr.get('note', 'n/a')}]"
+            )
+
         return {
             "screenshot_result": shot_res,
             "structural": structural,
-            "visual_summary": f"User is interacting with '{structural['active_app']}' (Window: '{structural['window_title']}'). Activity: {structural['detected_activity']}.",
+            "ocr": ocr,
+            "visual_summary": visual_summary,
             "timestamp": time.time()
         }
 
