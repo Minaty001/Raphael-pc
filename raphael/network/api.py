@@ -73,16 +73,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-frontend_dist = os.path.abspath("./frontend/dist")
-if os.path.exists(frontend_dist):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+# Serve the static UI. The bundled frontend is now a no-build static site
+# (index.html + css/ + src/). The mount is registered at the very END of this
+# module (after every /api and /ws route) so the explicit routes take
+# precedence and only unmatched paths fall through to the static files.
+frontend_static = os.path.abspath("./frontend")
 
-@app.get("/")
-async def serve_frontend():
-    index_path = os.path.join(frontend_dist, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"message": "Raphael AI Assistant Gateway API is active. JARVIS UI build not found."}
 
 @app.get("/health")
 async def health_check():
@@ -296,6 +292,31 @@ async def send_chat_message(payload: Dict[str, Any] = Body(...)):
     res = await reasoning.process_user_input(text)
     return res
 
+
+@app.post("/api/tts", dependencies=[Depends(require_api_auth)])
+async def text_to_speech(payload: Dict[str, Any] = Body(...)):
+    """Text-to-speech via Edge TTS. Returns audio/mpeg, or 501 if unavailable."""
+    from fastapi.responses import Response
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+    try:
+        import io
+        import edge_tts
+        voice = getattr(get_config().voice, "tts_voice", None) or "en-US-AriaNeural"
+        communicate = edge_tts.Communicate(text, voice)
+        buf = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                buf.write(chunk["data"])
+        audio = buf.getvalue()
+        if not audio:
+            raise RuntimeError("empty audio")
+        return Response(content=audio, media_type="audio/mpeg")
+    except Exception as e:
+        logger.warning(f"/api/tts unavailable: {e}")
+        raise HTTPException(status_code=501, detail="TTS unavailable")
+
 # ---------------------------------------------------------------------------
 # Always-Alive Runtime API (Sections 65-71)
 # ---------------------------------------------------------------------------
@@ -460,3 +481,21 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         ws_mgr.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# Static frontend mount — registered LAST so every explicit /api/* and /ws
+# route above takes precedence. Only unmatched paths fall through here.
+# ---------------------------------------------------------------------------
+if os.path.isdir(frontend_static):
+    app.mount(
+        "/",
+        StaticFiles(directory=frontend_static, html=True, check_dir=True),
+        name="frontend",
+    )
+else:
+    @app.get("/")
+    async def serve_frontend():
+        return {
+            "message": "Raphael AI Assistant Gateway API is active. Frontend not found."
+        }

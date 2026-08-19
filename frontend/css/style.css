@@ -1,0 +1,361 @@
+:root {
+    --void: #060912;
+    --surface: #0E1424;
+    --elevated: #1F2C4D;
+    --rimuru: #3FA9F5;
+    --halo: #A8E0FF;
+    --divine: #F5C542;
+    --text-main: #E8F1FA;
+    --muted: #6B7C93;
+    --alert: #FF6B8A;
+    --font-sans: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--void);
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+#particles {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    z-index: 10;
+}
+
+.logo {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--text-main);
+}
+
+button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    transition: color 0.3s ease;
+}
+
+button:hover {
+    color: var(--text-main);
+}
+
+main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    padding: 2rem;
+}
+
+.halo-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+}
+
+#halo-canvas {
+    width: 280px;
+    height: 280px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#status-label {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    letter-spacing: 0.15em;
+    color: var(--divine);
+    margin-top: 1rem;
+    min-height: 1.5rem;
+    transition: color 0.3s ease;
+}
+
+.response-area {
+    margin-top: 2rem;
+    width: 100%;
+    max-width: 600px;
+    height: 150px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#response-text {
+    font-size: 1.125rem;
+    line-height: 1.6;
+    text-align: center;
+    color: var(--text-main);
+    text-shadow: 0 0 10px rgba(232, 241, 250, 0.2);
+}
+
+.input-area {
+    padding: 1.5rem 2rem 2.5rem;
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+}
+
+#chat-form {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    max-width: 600px;
+    background-color: var(--surface);
+    border: 1px solid var(--elevated);
+    border-radius: 999px;
+    padding: 0.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    transition: border-color 0.3s ease;
+}
+
+#chat-form:focus-within {
+    border-color: var(--rimuru);
+}
+
+#text-input {
+    flex: 1;
+    background: none;
+    border: none;
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    padding: 0 1rem;
+    outline: none;
+}
+
+#text-input::placeholder {
+    color: var(--muted);
+}
+
+#mic-btn, #send-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    margin-left: 0.5rem;
+    background-color: var(--elevated);
+    color: var(--text-main);
+    transition: all 0.2s ease;
+}
+
+#mic-btn:hover, #send-btn:hover {
+    background-color: var(--rimuru);
+}
+
+#mic-btn.active {
+    background-color: var(--halo);
+    color: var(--void);
+    box-shadow: 0 0 15px var(--halo);
+}
+
+/* Settings Panel */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(6, 9, 18, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.settings-content {
+    background-color: var(--surface);
+    border: 1px solid var(--elevated);
+    border-radius: 16px;
+    padding: 2.5rem;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    transform: translateY(0);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.overlay.hidden .settings-content {
+    transform: translateY(-20px);
+}
+
+.settings-content h2 {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    margin-bottom: 2rem;
+    color: var(--rimuru);
+    letter-spacing: 0.1em;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+    font-family: var(--font-mono);
+}
+
+.form-group input {
+    width: 100%;
+    background-color: var(--void);
+    border: 1px solid var(--elevated);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.form-group input:focus {
+    border-color: var(--rimuru);
+}
+
+.primary-btn {
+    width: 100%;
+    background-color: var(--rimuru);
+    color: var(--void);
+    border: none;
+    border-radius: 8px;
+    padding: 0.875rem;
+    font-weight: 600;
+    font-size: 1rem;
+    margin-top: 1rem;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.primary-btn:hover {
+    background-color: var(--halo);
+    color: var(--void);
+}
+
+.primary-btn:active {
+    transform: scale(0.98);
+}
+
+.secondary-btn {
+    width: 100%;
+    background-color: transparent;
+    color: var(--muted);
+    border: 1px solid var(--elevated);
+    border-radius: 8px;
+    padding: 0.875rem;
+    font-weight: 500;
+    font-size: 1rem;
+    margin-top: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.secondary-btn:hover {
+    color: var(--text-main);
+    border-color: var(--muted);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--elevated);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+}
+
+/* Actions Render Styling */
+.actions-list {
+    margin-top: 1.5rem;
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.action-item {
+    background-color: rgba(31, 44, 77, 0.3);
+    border: 1px dashed var(--elevated);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-main);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.action-badge {
+    background-color: var(--rimuru);
+    color: var(--void);
+    font-weight: bold;
+    font-size: 0.6875rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+}
+
+.action-desc {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
