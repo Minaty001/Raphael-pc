@@ -143,7 +143,13 @@ honestly below so the UI never over-claims what the brain can do.
   colour) as the always-available fallback so perception always has a factual signal.
   The `read_screen` tool surfaces this to the agent loop. Install `tesseract` +
   `pip install pytesseract` for full text extraction.
-- Real browser *automation* (DOM interaction beyond launching a URL/search) remains open.
+- Real browser automation (ROADMAP remaining gap) is now partially addressed:
+  `read_webpage` does genuine content extraction (title/text/links) with **zero
+  dependencies** (stdlib `urllib` + `html.parser`), and `browser_navigate` /
+  `browser_click` / `browser_fill` / `browser_extract` provide real DOM
+  automation via **Playwright** when the user installs it (`pip install
+  playwright && playwright install chromium`). When Playwright is absent these
+  return an honest "engine not available" result rather than faking success.
 - Proactive intelligence is wired and now data-driven: the scheduled proactive engine
   consumes the real working-memory summary (live perception `recent_screen`) instead of a
   hardcoded empty context, so suggestions reflect actual on-screen activity. Open-loop

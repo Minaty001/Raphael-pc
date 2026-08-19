@@ -135,6 +135,7 @@ def run_doctor():
         import raphael.tools.developer
         import raphael.tools.media
         import raphael.tools.screen
+        import raphael.tools.browser_automation
         from raphael.tools.registry import get_tool_registry
         tools = get_tool_registry().list_tools()
         checks.append(("✓", f"Tool Registry ({len(tools)} tools loaded)"))
