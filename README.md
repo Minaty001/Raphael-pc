@@ -129,10 +129,11 @@ honestly below so the UI never over-claims what the brain can do.
 - ✅ API-created tasks execute real work (tool-backed / reminder) instead of a fake `sleep`.
 - ✅ Health monitor reports truthful `"listening"` vs `"connected"` for the WebSocket.
 - ✅ Action verification is now real (ROADMAP L10): `open_application`/`close_application` are confirmed against actual process state via `is_process_running`, and unconfirmed actions are reported as `"unverified"` instead of falsely `"success"`.
+- ✅ Memory is now genuinely vector-based (audit #12/#13/#14): `vector_store.py` uses real dense embeddings (offline `LocalHashingEmbedding`, auto-upgrades to sentence-transformers if installed) instead of bag-of-words; `hybrid_retrieve` unifies episodic + semantic + user-model + vector hits into one ranked list scored by semantic similarity + importance + recency + confidence.
 
 **Known gaps being addressed (P1/P2):**
-- Streaming LLM + STT pipelines (currently buffered), true embedding-based vector memory,
-  richer autonomous planning/execution, real browser automation, and multimodal screen OCR.
+- Streaming LLM + STT pipelines (currently buffered), richer autonomous
+  planning/execution, real browser automation, and multimodal screen OCR.
 
 See the in-repo audit notes for the full prioritized roadmap.
 
