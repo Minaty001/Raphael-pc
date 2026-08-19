@@ -154,6 +154,11 @@ honestly below so the UI never over-claims what the brain can do.
   consumes the real working-memory summary (live perception `recent_screen`) instead of a
   hardcoded empty context, so suggestions reflect actual on-screen activity. Open-loop
   follow-ups + hourly interruption budgets are tested.
+- Frontend **Vision** page is now wired to the real backend: "Scan Screen" calls the
+  `read_screen` tool (live app/window + OCR when installed) and "Web Reader" calls
+  `read_webpage` (real title/text/links), via the new `POST /api/tools/execute`
+  endpoint — replacing the previous hardcoded placeholder UI. Honest "OCR engine not
+  installed" notice shown when tesseract is absent.
 
 See the in-repo audit notes for the full prioritized roadmap.
 

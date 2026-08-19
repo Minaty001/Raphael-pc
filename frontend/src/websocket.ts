@@ -165,6 +165,10 @@ export class RaphaelWebSocketClient {
   public async interrupt(): Promise<boolean> {
     return !!(await this.rest("/api/runtime/interrupt", "POST"));
   }
+
+  public async executeTool(name: string, args: Record<string, any> = {}): Promise<any | null> {
+    return this.rest("/api/tools/execute", "POST", { tool: name, args });
+  }
 }
 
 export const wsClient = new RaphaelWebSocketClient();

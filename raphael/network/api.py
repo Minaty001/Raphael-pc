@@ -153,6 +153,25 @@ async def set_llm_config(payload: Dict[str, Any] = Body(default={})):
 async def list_available_tools():
     return get_tool_registry().list_tools()
 
+@app.post("/api/tools/execute")
+async def execute_tool_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Run a registered tool synchronously and return its result.
+
+    Body: {"tool": "<name>", "args": {...}}. Reuses the ToolRegistry so the
+    tool's own security policy, confirmation flow, and real ActionVerifier
+    checks all apply. This is what the frontend Screen / Web Reader panels
+    call to exercise read_screen / read_webpage for real (no fake data).
+    """
+    tool_name = payload.get("tool")
+    args = payload.get("args") or {}
+    if not tool_name:
+        raise HTTPException(status_code=400, detail="`tool` name required")
+    reg = get_tool_registry()
+    if reg.get_tool(tool_name) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown tool '{tool_name}'")
+    result = await reg.execute_tool(tool_name, args)
+    return result
+
 @app.get("/api/audio/devices")
 async def list_audio_devices():
     """List all detected audio input devices and the auto-selected device.
